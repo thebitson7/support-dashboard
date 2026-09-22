@@ -86,3 +86,17 @@ The app is now available at `http://localhost:3000`.
 ## Running both together
 
 With the backend running on port 8000 and the frontend on port 3000, open `http://localhost:3000` — the home page performs a live connectivity check against the backend's `/api/ping/` endpoint and shows a "Connected" badge with the backend's response once it succeeds.
+
+## Backend app structure convention
+
+The Django project follows one app per domain area:
+
+- `core` — cross-cutting endpoints not tied to a specific domain (e.g. the `/api/ping/` health check).
+- `accounts` — users, authentication (custom `User` model, JWT token endpoints).
+- Future domain areas (e.g. tickets) get their own app the same way.
+
+Each app owns its own `urls.py`, included from `config/urls.py` under `/api/<app-name>/` (accounts' auth endpoints are the one exception, mounted at `/api/auth/` since `POST /api/auth/token/` reads better than `/api/accounts/token/`). Models, serializers, and views for a domain area live inside that app — avoid putting unrelated logic in `core`.
+
+## Frontend API client convention
+
+All API calls go through `src/lib/api.ts` (`apiGet`, `apiPost`, or the underlying `apiFetch<T>`) rather than calling `fetch()` directly in components. It reads `NEXT_PUBLIC_API_URL` once, parses JSON, and throws a typed `ApiError` (with `status` and `message`) on non-2xx responses.

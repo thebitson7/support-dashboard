@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 
+import { apiGet } from "@/lib/api";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
@@ -16,18 +17,12 @@ type ConnectionState =
   | { phase: "success"; data: PingResponse }
   | { phase: "error"; detail: string };
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL;
-
 export default function Home() {
   const [state, setState] = useState<ConnectionState>({ phase: "loading" });
 
   const fetchPing = useCallback(async () => {
     try {
-      const res = await fetch(`${API_URL}/ping/`);
-      if (!res.ok) {
-        throw new Error(`Backend responded with status ${res.status}`);
-      }
-      const data: PingResponse = await res.json();
+      const data = await apiGet<PingResponse>("/ping/");
       setState({ phase: "success", data });
     } catch (err) {
       const detail = err instanceof Error ? err.message : "Unknown error";
