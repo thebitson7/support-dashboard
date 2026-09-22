@@ -1,0 +1,88 @@
+# Support Dashboard
+
+Support Ticket & Work Stats Dashboard — internal redesign.
+
+## Tech stack
+
+- **Frontend**: Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui, `recharts`, `@tanstack/react-table`
+- **Backend**: Django + Django REST Framework, `django-cors-headers`, `djangorestframework-simplejwt`
+
+## Project structure
+
+```
+support-dashboard/
+├── backend/     # Django + DRF API
+└── frontend/    # Next.js app
+```
+
+## Prerequisites
+
+- Node.js 20+
+- Python 3.11+
+- git
+
+## Backend setup (Django)
+
+```bash
+cd backend
+python -m venv venv
+```
+
+Activate the virtual environment:
+
+- **macOS/Linux**: `source venv/bin/activate`
+- **Windows (PowerShell)**: `.\venv\Scripts\Activate.ps1`
+- **Windows (cmd.exe)**: `venv\Scripts\activate.bat`
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Create your local environment file:
+
+```bash
+cp .env.example .env   # Windows: copy .env.example .env
+```
+
+Fill in `SECRET_KEY` in `.env` with a real random value (e.g. `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`), leave `DEBUG=True` for local dev.
+
+Run migrations and start the dev server:
+
+```bash
+python manage.py migrate
+python manage.py runserver 8000
+```
+
+The API is now available at `http://localhost:8000/api/`. Verify with:
+
+```bash
+curl http://localhost:8000/api/ping/
+# {"status": "ok", "message": "pong"}
+```
+
+## Frontend setup (Next.js)
+
+```bash
+cd frontend
+npm install
+```
+
+Create your local environment file:
+
+```bash
+cp .env.local.example .env.local   # Windows: copy .env.local.example .env.local
+```
+
+Start the dev server:
+
+```bash
+npm run dev
+```
+
+The app is now available at `http://localhost:3000`.
+
+## Running both together
+
+With the backend running on port 8000 and the frontend on port 3000, open `http://localhost:3000` — the home page performs a live connectivity check against the backend's `/api/ping/` endpoint and shows a "Connected" badge with the backend's response once it succeeds.
