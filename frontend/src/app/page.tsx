@@ -1,87 +1,27 @@
-"use client";
-
-import { useCallback, useEffect, useState } from "react";
-
-import { apiGet } from "@/lib/api";
+import { getDashboardData } from "@/lib/mock-data";
+import { DashboardSections } from "@/components/dashboard/dashboard-sections";
+import { MotionRoot } from "@/components/dashboard/motion-root";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-
-type PingResponse = {
-  status: string;
-  message: string;
-};
-
-type ConnectionState =
-  | { phase: "loading" }
-  | { phase: "success"; data: PingResponse }
-  | { phase: "error"; detail: string };
 
 export default function Home() {
-  const [state, setState] = useState<ConnectionState>({ phase: "loading" });
-
-  const fetchPing = useCallback(async () => {
-    try {
-      const data = await apiGet<PingResponse>("/ping/");
-      setState({ phase: "success", data });
-    } catch (err) {
-      const detail = err instanceof Error ? err.message : "Unknown error";
-      setState({ phase: "error", detail });
-    }
-  }, []);
-
-  useEffect(() => {
-    // Data fetching on mount is a documented valid effect use case; the
-    // lint rule can't see that the setState calls inside fetchPing all
-    // happen after an await, so this false positive is suppressed here.
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    fetchPing();
-  }, [fetchPing]);
-
-  const handleRetry = useCallback(() => {
-    setState({ phase: "loading" });
-    fetchPing();
-  }, [fetchPing]);
+  // Mock data today; swap getDashboardData() for real API calls later.
+  const data = getDashboardData();
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-background p-8">
-      <Card className="w-full max-w-md">
-        <CardHeader>
-          <CardTitle>Backend Connection Check</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-col gap-4">
-          {state.phase === "loading" && (
-            <p className="text-sm text-muted-foreground">
-              Checking backend connection…
-            </p>
-          )}
+    <MotionRoot>
+      {/* `@container`: columns react to the space next to the sidebar, so
+          collapsing/expanding it reflows the grids correctly. */}
+      <div className="@container mx-auto flex w-full max-w-7xl flex-col gap-6">
+        <header className="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight">Dashboard</h1>
+            <p className="text-label">Work hours and ticket activity at a glance</p>
+          </div>
+          <Badge variant="outline">Sample data</Badge>
+        </header>
 
-          {state.phase === "success" && (
-            <div className="flex items-center gap-3">
-              <Badge className="bg-green-600 text-white hover:bg-green-600">
-                Connected
-              </Badge>
-              <span className="text-sm text-foreground">
-                {state.data.message}
-              </span>
-            </div>
-          )}
-
-          {state.phase === "error" && (
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-3">
-                <Badge className="bg-red-600 text-white hover:bg-red-600">
-                  Connection failed
-                </Badge>
-              </div>
-              <p className="text-sm text-muted-foreground">{state.detail}</p>
-              <Button onClick={handleRetry} className="w-fit">
-                Retry
-              </Button>
-            </div>
-          )}
-        </CardContent>
-      </Card>
-    </div>
+        <DashboardSections data={data} />
+      </div>
+    </MotionRoot>
   );
 }

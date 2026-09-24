@@ -7,7 +7,7 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-sans);
+  --font-sans: var(--font-jakarta), ui-sans-serif, system-ui, sans-serif;
   --font-mono: var(--font-geist-mono);
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
@@ -18,6 +18,14 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-foreground: var(--sidebar-foreground);
   --color-sidebar: var(--sidebar);
+  --shadow-elev-1: var(--elev-1);
+  --shadow-elev-2: var(--elev-2);
+  --shadow-elev-hover: var(--elev-hover);
+  --color-status-open: var(--status-open);
+  --color-status-closed: var(--status-closed);
+  --color-chart-violet: var(--chart-violet);
+  --color-chart-info: var(--chart-info);
+  --color-chart-success: var(--chart-success);
   --color-chart-5: var(--chart-5);
   --color-chart-4: var(--chart-4);
   --color-chart-3: var(--chart-3);
@@ -25,6 +33,7 @@
   --color-chart-1: var(--chart-1);
   --color-ring: var(--ring);
   --color-input: var(--input);
+  --color-control: var(--control-border);
   --color-border: var(--border);
   --color-destructive: var(--destructive);
   --color-accent-foreground: var(--accent-foreground);
@@ -49,72 +58,113 @@
 }
 
 :root {
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
+  /* Brand palette: black #000000, navy #233D4D, orange #FE7F2D (sole accent), mist #EAECF0.
+     Light mode = mist content area + white cards + navy text, with a navy sidebar. */
+  --background: #eaecf0;
+  --foreground: #233d4d;
+  --card: #ffffff;
+  --card-foreground: #233d4d;
+  --popover: #ffffff;
+  --popover-foreground: #233d4d;
+  --primary: #fe7f2d;
+  --primary-foreground: #000000; /* white on orange is only 2.5:1; black is 8.3:1 */
+  --secondary: #dce0e6;
+  --secondary-foreground: #233d4d;
+  --muted: #dde1e7;
+  --muted-foreground: #4f6372;
+  --accent: #ffe6d4; /* soft tint of the orange accent, for hover/selected surfaces */
+  --accent-foreground: #233d4d;
+  --destructive: #d92d20;
+  --border: #d3d8df;
+  --input: #c9cfd8;
+  /* WCAG 1.4.11: form-control outlines and focus rings need 3:1 against their surface. */
+  --control-border: #78858f;
+  --ring: #c4540f; /* deeper than the brand orange (which is only 2.1-2.5:1 on light surfaces) */
+  --chart-1: #fe7f2d;
+  --chart-2: #233d4d;
+  --chart-3: #5b7a8c;
+  --chart-4: #94a9b6;
+  --chart-5: #c4cfd6;
+  /* Data-only accents (chart series, category tags, per-card icons). The
+     orange --primary stays the sole CTA / active-state colour. */
+  --chart-success: #087a5a;
+  --chart-info: #2a64a8;
+  --chart-violet: #6250bd;
+  /* Ticket status: a muted coral for "needs attention", a calm teal for done. */
+  --status-open: #b93326;
+  --status-closed: #256a5b;
   --radius: 0.625rem;
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  /* Layered elevation: a tight contact shadow + a soft ambient one (+ a broad
+     lift for the raised hero tier). Tinted with the brand navy, not grey. */
+  --elev-1:
+    0 1px 1px rgb(35 61 77 / 0.06), 0 2px 4px -1px rgb(35 61 77 / 0.05),
+    0 10px 24px -10px rgb(35 61 77 / 0.14);
+  --elev-2:
+    0 1px 1px rgb(35 61 77 / 0.08), 0 3px 6px -1px rgb(35 61 77 / 0.08),
+    0 18px 36px -12px rgb(35 61 77 / 0.26);
+  --elev-hover:
+    0 2px 2px rgb(35 61 77 / 0.08), 0 8px 16px -4px rgb(35 61 77 / 0.12),
+    0 28px 48px -14px rgb(35 61 77 / 0.3);
+  /* The sidebar stays navy in both modes. */
+  --sidebar: #233d4d;
+  --sidebar-foreground: #eaecf0;
+  --sidebar-primary: #fe7f2d;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: rgb(234 236 240 / 0.09);
+  --sidebar-accent-foreground: #eaecf0;
+  --sidebar-border: rgb(234 236 240 / 0.12);
+  --sidebar-ring: #fe7f2d;
 }
 
 .dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.205 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.205 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.922 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.704 0.191 22.216);
-  --border: oklch(1 0 0 / 10%);
-  --input: oklch(1 0 0 / 15%);
-  --ring: oklch(0.556 0 0);
-  --chart-1: oklch(0.87 0 0);
-  --chart-2: oklch(0.556 0 0);
-  --chart-3: oklch(0.439 0 0);
-  --chart-4: oklch(0.371 0 0);
-  --chart-5: oklch(0.269 0 0);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(1 0 0 / 10%);
-  --sidebar-ring: oklch(0.556 0 0);
+  /* Dark mode = black background, navy surfaces, mist text used as-is (never pure white). */
+  --background: #000000;
+  --foreground: #eaecf0;
+  --card: #233d4d;
+  --card-foreground: #eaecf0;
+  --popover: #233d4d;
+  --popover-foreground: #eaecf0;
+  --primary: #fe7f2d;
+  --primary-foreground: #000000;
+  --secondary: #2f4e61;
+  --secondary-foreground: #eaecf0;
+  --muted: #0f1a22;
+  --muted-foreground: #9db0bd;
+  --accent: rgb(254 127 45 / 0.16);
+  --accent-foreground: #eaecf0;
+  --destructive: #ff7b70;
+  --border: rgb(234 236 240 / 0.14);
+  --input: rgb(234 236 240 / 0.2);
+  --control-border: rgb(234 236 240 / 0.5);
+  --ring: #fe7f2d;
+  --chart-1: #fe7f2d;
+  --chart-2: #7e9aab;
+  --chart-3: #4f6e80;
+  --chart-4: #a8bac5;
+  --chart-5: #eaecf0;
+  --chart-success: #3dd6a6;
+  --chart-info: #7db8f0;
+  --chart-violet: #b0a2f5;
+  --status-open: #ff9a88;
+  --status-closed: #8edbc6;
+  --sidebar: #233d4d;
+  --sidebar-foreground: #eaecf0;
+  --sidebar-primary: #fe7f2d;
+  --sidebar-primary-foreground: #000000;
+  --sidebar-accent: rgb(234 236 240 / 0.09);
+  --sidebar-accent-foreground: #eaecf0;
+  --sidebar-border: rgb(234 236 240 / 0.12);
+  --sidebar-ring: #fe7f2d;
+  /* On black, shadows barely read, so add a faint top-edge highlight. */
+  --elev-1:
+    inset 0 1px 0 rgb(255 255 255 / 0.05), 0 1px 1px rgb(0 0 0 / 0.4),
+    0 12px 28px -10px rgb(0 0 0 / 0.65);
+  --elev-2:
+    inset 0 1px 0 rgb(255 255 255 / 0.08), 0 2px 4px rgb(0 0 0 / 0.45),
+    0 22px 44px -14px rgb(0 0 0 / 0.8);
+  --elev-hover:
+    inset 0 1px 0 rgb(255 255 255 / 0.08), 0 4px 8px rgb(0 0 0 / 0.5),
+    0 30px 56px -14px rgb(0 0 0 / 0.9);
 }
 
 @layer base {
@@ -126,5 +176,78 @@
   }
   html {
     @apply font-sans;
+  }
+}
+/* Type scale for the dashboard: one exact spec per role. */
+@utility text-metric {
+  font-size: 2.25rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.025em;
+  font-variant-numeric: tabular-nums;
+}
+@utility text-metric-sm {
+  font-size: 1.875rem;
+  line-height: 1;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+}
+@utility text-title {
+  font-size: 1rem;
+  line-height: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+@utility text-label {
+  font-size: 0.875rem;
+  line-height: 1.25rem;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+@utility text-caption {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  color: var(--muted-foreground);
+}
+
+/* Slim, always-visible scrollbars for data tables. */
+@utility scrollbar-styled {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in oklab, var(--muted-foreground) 55%, transparent) transparent;
+  &::-webkit-scrollbar {
+    height: 10px;
+    width: 10px;
+  }
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  &::-webkit-scrollbar-thumb {
+    background: color-mix(in oklab, var(--muted-foreground) 45%, transparent);
+    border-radius: 9999px;
+    border: 2px solid transparent;
+    background-clip: content-box;
+  }
+  &::-webkit-scrollbar-thumb:hover {
+    background: color-mix(in oklab, var(--muted-foreground) 70%, transparent);
+    background-clip: content-box;
+  }
+}
+
+/* Table rows fade/rise in once after the skeleton; delay is set per row. */
+@keyframes row-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+@utility row-enter {
+  animation: row-in 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+  @media (prefers-reduced-motion: reduce) {
+    animation: none;
   }
 }
