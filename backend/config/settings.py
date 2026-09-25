@@ -6,6 +6,7 @@ local development; see `.env.example`). Nothing secret is stored in this file.
 """
 
 import os
+from datetime import timedelta
 from pathlib import Path
 
 from django.core.exceptions import ImproperlyConfigured
@@ -55,9 +56,11 @@ INSTALLED_APPS = [
     "django.contrib.messages",
     "django.contrib.staticfiles",
     "rest_framework",
+    "rest_framework_simplejwt.token_blacklist",
     "corsheaders",
     "core",
     "accounts",
+    "working_hours",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -109,6 +112,34 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # Scoped rates for throttles that opt in (see accounts/throttling.py).
+    "DEFAULT_THROTTLE_RATES": {
+        # Sign-in attempts per username + client IP.
+        "login": os.environ.get("LOGIN_THROTTLE_RATE", "5/5m"),
+    },
+}
+
+SIMPLE_JWT = {
+    "ACCESS_TOKEN_LIFETIME": timedelta(minutes=5),
+    "REFRESH_TOKEN_LIFETIME": timedelta(days=1),
+    # Rotation is off: the browser refreshes from several places (tabs, the
+    # Next proxy), and rotation + blacklisting would log out whichever lost
+    # the race. Logout still blacklists the refresh token explicitly.
+    "ROTATE_REFRESH_TOKENS": False,
+}
+
+# The Next.js server calls this API on the browser's behalf, so REMOTE_ADDR is
+# the proxy's address. X-Forwarded-For is trusted only when the request comes
+# from one of these addresses; anyone else could forge it.
+TRUSTED_PROXY_IPS = env_list("TRUSTED_PROXY_IPS", "127.0.0.1,::1")
+
+
+# --- Cache -------------------------------------------------------------------
+# Backs the login throttle. Per-process memory is fine for one dev server; use
+# a shared cache (Redis/Memcached) once there is more than one API process.
+
+CACHES = {
+    "default": {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"},
 }
 
 

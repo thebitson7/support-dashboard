@@ -47,6 +47,17 @@ function PeriodSkeleton() {
   );
 }
 
+/** The six period cards' grid; also used on its own by User Working Hours. */
+export function PeriodCardsSkeleton() {
+  return (
+    <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
+      {Array.from({ length: 6 }).map((_, i) => (
+        <PeriodSkeleton key={i} />
+      ))}
+    </div>
+  );
+}
+
 function ChartSkeleton({ className }: { className?: string }) {
   return (
     <Card className={cn(shell, "min-h-[380px] gap-4", className)}>
@@ -92,11 +103,7 @@ export function DashboardSkeleton() {
           <KpiSkeleton key={i} />
         ))}
       </div>
-      <div className="grid grid-cols-1 gap-4 @xl:grid-cols-2 @4xl:grid-cols-3">
-        {Array.from({ length: 6 }).map((_, i) => (
-          <PeriodSkeleton key={i} />
-        ))}
-      </div>
+      <PeriodCardsSkeleton />
       <div className="grid grid-cols-1 gap-4 @4xl:grid-cols-5">
         <ChartSkeleton className="@4xl:col-span-3 @4xl:min-h-[438px]" />
         <ListSkeleton rows={3} className="@4xl:col-span-2 @4xl:min-h-[438px]" />

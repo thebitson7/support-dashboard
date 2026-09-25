@@ -99,4 +99,6 @@ Each app owns its own `urls.py`, included from `config/urls.py` under `/api/<app
 
 ## Frontend API client convention
 
-All API calls go through `src/lib/api.ts` (`apiGet`, `apiPost`, or the underlying `apiFetch<T>`) rather than calling `fetch()` directly in components. It reads `NEXT_PUBLIC_API_URL` once, parses JSON, and throws a typed `ApiError` (with `status` and `message`) on non-2xx responses.
+All API calls go through `src/lib/api.ts` (`apiGet`, `apiPost`, or the underlying `apiFetch<T>`) rather than calling `fetch()` directly in components. It calls this app's own `/api/*` routes (never Django directly), parses JSON, refreshes an expired session once (single-flight) and throws a typed `ApiError` (with `status`, `message`, and `retryAfterSeconds` on 429) on non-2xx responses.
+
+**Auth:** the JWTs live in httpOnly cookies set by the Next.js route handlers in `src/app/api/auth/{login,refresh,logout}`; `src/app/api/[...path]` forwards everything else to Django (`DJANGO_API_URL`, server-side only) with the access cookie as a Bearer header. `src/proxy.ts` redirects signed-out visitors to `/login` before any page renders. Logout blacklists the refresh token; sign-in is rate limited per username + IP (`LOGIN_THROTTLE_RATE`, default `5/5m`).

@@ -4,7 +4,7 @@ import { createContext, useContext, useState, useSyncExternalStore, type ReactNo
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { AnimatePresence, MotionConfig, motion, type Variants } from "framer-motion";
-import { ChevronRight, ChevronsLeft, ChevronsRight, type LucideIcon } from "lucide-react";
+import { ChevronRight, ChevronsLeft, ChevronsRight, LogOut, type LucideIcon } from "lucide-react";
 import { cn } from "cn";
 
 import { Button } from "@/components/ui/button";
@@ -12,6 +12,7 @@ import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
 import { navItems, type NavItem } from "@/config/nav";
+import { displayName, initials, useAuth, type AuthUser } from "@/lib/auth";
 
 const STORAGE_KEY = "sidebar-collapsed";
 const EXPANDED_WIDTH = 256; // w-64
@@ -359,6 +360,108 @@ function GroupItem({ item, pathname }: { item: NavItem; pathname: string }) {
   );
 }
 
+// --- User menu ----------------------------------------------------------------
+
+function Avatar({ user }: { user: AuthUser }) {
+  return (
+    <span
+      aria-hidden
+      className="relative z-10 grid size-9 shrink-0 place-items-center rounded-full bg-sidebar-primary text-xs font-bold text-sidebar-primary-foreground"
+    >
+      {initials(user)}
+    </span>
+  );
+}
+
+function RoleBadge({ role }: { role: AuthUser["role"] }) {
+  return (
+    <span
+      className={cn(
+        "inline-flex h-4.5 items-center rounded-full px-1.5 text-[10px] font-semibold tracking-wide uppercase",
+        role === "admin"
+          ? "bg-sidebar-primary/20 text-sidebar-primary"
+          : "bg-sidebar-accent text-sidebar-foreground/75",
+      )}
+    >
+      {role}
+    </span>
+  );
+}
+
+/** Who is signed in (always visible) and the way out. */
+function UserMenu() {
+  const { user, logout } = useAuth();
+  const { collapsed } = useContext(SidebarContext);
+  const [open, setOpen] = useState(false);
+  if (!user) return null;
+  const name = displayName(user);
+
+  if (collapsed) {
+    return (
+      <Popover open={open} onOpenChange={setOpen}>
+        <PopoverTrigger
+          aria-label={`Account: ${name}`}
+          className="mx-auto flex rounded-full outline-none focus-visible:ring-2 focus-visible:ring-sidebar-ring"
+        >
+          <Avatar user={user} />
+        </PopoverTrigger>
+        <PopoverContent
+          side="right"
+          align="end"
+          sideOffset={16}
+          className={cn(
+            "w-56 gap-2 bg-sidebar p-3 text-sidebar-foreground ring-sidebar-border",
+            POPUP_MOTION,
+          )}
+        >
+          <div className="grid gap-1">
+            <p className="truncate text-sm font-semibold">{name}</p>
+            <RoleBadge role={user.role} />
+          </div>
+          <Button
+            variant="ghost"
+            className="h-9 justify-start rounded-full text-sidebar-foreground hover:bg-sidebar-accent hover:text-sidebar-foreground dark:hover:bg-sidebar-accent"
+            onClick={logout}
+          >
+            <LogOut />
+            Log out
+          </Button>
+        </PopoverContent>
+      </Popover>
+    );
+  }
+
+  return (
+    <div className="flex items-center gap-2.5 pl-0.5">
+      <Avatar user={user} />
+      <div className="grid min-w-0 flex-1 justify-items-start gap-0.5">
+        <p className="w-full truncate text-sm font-semibold" title={name}>
+          {name}
+        </p>
+        <RoleBadge role={user.role} />
+      </div>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              aria-label="Log out"
+              className={headerButton}
+              onClick={logout}
+            />
+          }
+        >
+          <LogOut className="size-5" />
+        </TooltipTrigger>
+        <TooltipContent side="right" sideOffset={16} className={POPUP_MOTION}>
+          Log out
+        </TooltipContent>
+      </Tooltip>
+    </div>
+  );
+}
+
 // --- Sidebar ------------------------------------------------------------------
 
 const headerButton =
@@ -471,6 +574,10 @@ export function Sidebar() {
                 )}
               </AnimatePresence>
             </nav>
+
+            <div className="shrink-0 border-t border-sidebar-border px-3 py-3">
+              <UserMenu />
+            </div>
           </motion.aside>
         </TooltipProvider>
       </SidebarContext.Provider>

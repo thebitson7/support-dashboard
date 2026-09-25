@@ -2,8 +2,9 @@ import type { Metadata } from "next";
 import { Geist_Mono, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
 
-import { Sidebar } from "@/components/layout/sidebar";
+import { AppShell } from "@/components/auth/app-shell";
 import { ThemeProvider } from "@/components/theme-provider";
+import { AuthProvider } from "@/lib/auth";
 
 const jakarta = Plus_Jakarta_Sans({
   variable: "--font-jakarta",
@@ -30,12 +31,9 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
     >
       <body className="min-h-full flex flex-col">
         <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
-          <div className="flex h-dvh overflow-hidden">
-            <Sidebar />
-            <main className="relative flex min-w-0 flex-1 flex-col overflow-y-auto p-6">
-              {children}
-            </main>
-          </div>
+          <AuthProvider>
+            <AppShell>{children}</AppShell>
+          </AuthProvider>
         </ThemeProvider>
       </body>
     </html>
