@@ -20,12 +20,19 @@ export class ApiError extends Error {
   readonly status: number;
   /** From a 429's Retry-After header: seconds until trying again makes sense. */
   readonly retryAfterSeconds?: number;
+  /** The parsed JSON error body, e.g. DRF's per-field errors on a 400. */
+  readonly data?: unknown;
 
-  constructor(status: number, message: string, retryAfterSeconds?: number) {
+  constructor(
+    status: number,
+    message: string,
+    options: { retryAfterSeconds?: number; data?: unknown } = {},
+  ) {
     super(message);
     this.name = "ApiError";
     this.status = status;
-    this.retryAfterSeconds = retryAfterSeconds;
+    this.retryAfterSeconds = options.retryAfterSeconds;
+    this.data = options.data;
   }
 }
 
@@ -56,7 +63,11 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     return await fetch(`${API_URL}${normalize(path)}`, {
       ...init,
       credentials: "same-origin",
-      headers: { "Content-Type": "application/json", ...init.headers },
+      // FormData sets its own multipart Content-Type (with the boundary).
+      headers:
+        init.body instanceof FormData
+          ? init.headers
+          : { "Content-Type": "application/json", ...init.headers },
       // A caller-supplied signal can cancel too; the timeout always applies.
       signal: init.signal ? AbortSignal.any([init.signal, controller.signal]) : controller.signal,
     });
@@ -99,16 +110,19 @@ function refreshSession(): Promise<boolean> {
   return refreshing;
 }
 
-/** DRF errors are JSON like {"detail": "..."}; surface that sentence when present. */
-function errorMessage(body: string, fallback: string): string {
+function parseJson(body: string): unknown {
   try {
-    const parsed: unknown = JSON.parse(body);
-    if (parsed && typeof parsed === "object" && "detail" in parsed) {
-      const { detail } = parsed as { detail: unknown };
-      if (typeof detail === "string") return detail;
-    }
+    return JSON.parse(body);
   } catch {
-    // Not JSON: use the raw text.
+    return undefined;
+  }
+}
+
+/** DRF errors are JSON like {"detail": "..."}; surface that sentence when present. */
+function errorMessage(body: string, data: unknown, fallback: string): string {
+  if (data && typeof data === "object" && "detail" in data) {
+    const { detail } = data as { detail: unknown };
+    if (typeof detail === "string") return detail;
   }
   return body || fallback;
 }
@@ -130,12 +144,12 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
 
   if (!res.ok) {
     const body = await res.text().catch(() => "");
+    const data = parseJson(body);
     const retryAfter = Number(res.headers.get("retry-after"));
-    throw new ApiError(
-      res.status,
-      errorMessage(body, res.statusText),
-      Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
-    );
+    throw new ApiError(res.status, errorMessage(body, data, res.statusText), {
+      retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
+      data,
+    });
   }
 
   // No body to parse (204 No Content / empty 2xx). Callers of such endpoints
@@ -157,9 +171,15 @@ export function apiGet<T>(path: string, init?: { signal?: AbortSignal }): Promis
   return apiFetch<T>(path, { ...init, method: "GET" });
 }
 
+const encodeBody = (body: unknown) =>
+  body instanceof FormData ? body : body !== undefined ? JSON.stringify(body) : undefined;
+
+/** JSON body, or a FormData body sent as multipart (for file uploads). */
 export function apiPost<T>(path: string, body?: unknown): Promise<T> {
-  return apiFetch<T>(path, {
-    method: "POST",
-    body: body !== undefined ? JSON.stringify(body) : undefined,
-  });
+  return apiFetch<T>(path, { method: "POST", body: encodeBody(body) });
+}
+
+/** Partial update; same body rules as apiPost. */
+export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
+  return apiFetch<T>(path, { method: "PATCH", body: encodeBody(body) });
 }

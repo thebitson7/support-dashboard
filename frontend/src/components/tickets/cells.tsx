@@ -4,11 +4,15 @@ import type { TicketStatus } from "@/types/tickets";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
 
-/** DD/MM/YYYY HH:mm. UTC getters keep server and client output identical. */
+/**
+ * DD/MM/YYYY HH:mm in the viewer's local time: the same clock the ticket form
+ * uses for entry. (Rows only ever render in the browser, after the API call,
+ * so there is no server/client hydration mismatch to guard against.)
+ */
 function formatDateTime(ms: number) {
   const d = new Date(ms);
   const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getUTCDate())}/${p(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${p(d.getUTCHours())}:${p(d.getUTCMinutes())}`;
+  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
 /** Empty values read as a quiet dash, not a blank gap. */
@@ -72,19 +76,23 @@ export function StatusCell({ status }: { status: TicketStatus }) {
 }
 
 /**
- * A real checkbox in a read-only state: a filled orange box with a check when
- * set, a clear outlined box when not. Not editable for now.
+ * A boolean shown as a real checkbox in a read-only state: a filled orange
+ * box with a check when set, a clear outlined box when not.
  */
-export function PreCell({ checked }: { checked: boolean }) {
+export function FlagCell({ checked, label }: { checked: boolean; label: string }) {
   return (
     <span className="flex justify-center">
       <Checkbox
         checked={checked}
         readOnly
         tabIndex={-1}
-        aria-label={checked ? "Pre: yes" : "Pre: no"}
+        aria-label={`${label}: ${checked ? "yes" : "no"}`}
         className="pointer-events-none size-4.5"
       />
     </span>
   );
+}
+
+export function PreCell({ checked }: { checked: boolean }) {
+  return <FlagCell checked={checked} label="Pre" />;
 }

@@ -1,6 +1,5 @@
-// Shape of an AMS ticket row. The mock generator (src/lib/mock-tickets.ts)
-// returns these today; a real API response should be mapped onto the same
-// type so the table never changes.
+// Shape of an AMS ticket row, as the table renders it. API rows are mapped
+// onto it in src/lib/tickets-api.ts (toAmsTicket).
 
 export type TicketStatus = "Open" | "Closed";
 
@@ -9,7 +8,7 @@ export type AmsTicket = {
   siteName: string;
   siteOcn: string;
   cmsTicketNo: string;
-  /** All timestamps are epoch milliseconds (UTC). */
+  /** All timestamps are epoch milliseconds. */
   receivedAt: number;
   status: TicketStatus;
   /** Boolean flag shown as a checkbox. */

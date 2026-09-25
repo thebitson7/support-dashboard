@@ -37,7 +37,8 @@ export function TicketsPagination({
   totalRows: number;
 }) {
   const { pageIndex, pageSize } = table.state.pagination;
-  const matching = table.getPrePaginatedRowModel().rows.length;
+  // Server-side: the API reports how many rows match the current query.
+  const matching = table.getRowCount();
   const pageCount = table.getPageCount();
   const first = matching === 0 ? 0 : pageIndex * pageSize + 1;
   const last = Math.min((pageIndex + 1) * pageSize, matching);

@@ -166,3 +166,39 @@ class TimezoneFieldTests(AuthTestCase):
     def test_bad_stored_zone_falls_back_instead_of_crashing(self):
         self.user.timezone = "Not/AZone"
         self.assertEqual(str(self.user.tzinfo), "Asia/Kuala_Lumpur")
+
+
+class UserSearchTests(AuthTestCase):
+    URL = "/api/accounts/users/"
+
+    def setUp(self):
+        super().setUp()
+        User = get_user_model()
+        User.objects.create_user("syed", password="pw", first_name="Syed", last_name="Hussain")
+        User.objects.create_user("naleefa", password="pw", first_name="Naleefa", last_name="Kareem")
+        User.objects.create_user("gone", password="pw", first_name="Syed", last_name="Gone", is_active=False)
+        self.client.force_authenticate(self.user)  # a plain staff user
+
+    def usernames(self, q):
+        response = self.client.get(self.URL, {"q": q})
+        self.assertEqual(response.status_code, 200)
+        return [u["username"] for u in response.json()]
+
+    def test_any_authenticated_user_can_search_and_inactive_users_are_hidden(self):
+        self.assertEqual(self.usernames("syed"), ["syed"])
+
+    def test_matches_username_first_last_and_full_name(self):
+        self.assertEqual(self.usernames("kareem"), ["naleefa"])
+        self.assertEqual(self.usernames("syed huss"), ["syed"])
+        self.assertEqual(self.usernames("NALEEFA"), ["naleefa"])
+
+    def test_results_are_capped_and_shaped_like_the_user_summary(self):
+        User = get_user_model()
+        User.objects.bulk_create(User(username=f"bulk{n:02}") for n in range(30))
+        body = self.client.get(self.URL, {"q": "bulk"}).json()
+        self.assertEqual(len(body), 20)
+        self.assertEqual(set(body[0]), {"id", "username", "first_name", "last_name", "role", "timezone"})
+
+    def test_requires_authentication(self):
+        self.client.force_authenticate(None)
+        self.assertEqual(self.client.get(self.URL).status_code, 401)

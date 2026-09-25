@@ -32,6 +32,11 @@ class User(AbstractUser):
     )
 
     @property
+    def display_name(self) -> str:
+        """The full name ("First Last"), or the username when no name is set."""
+        return self.get_full_name() or self.username
+
+    @property
     def is_admin_role(self) -> bool:
         return self.role == self.Role.ADMIN
 

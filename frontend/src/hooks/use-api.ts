@@ -20,9 +20,11 @@ type Settled<T> = {
  * path (e.g. the previous user's numbers after switching users).
  *
  * `retry()` re-fetches the same path; if data is already on screen it stays
- * there (`isRefreshing`) instead of flashing back to a skeleton.
+ * there (`isRefreshing`) instead of flashing back to a skeleton. With
+ * `keepPreviousData`, that also holds across paths (e.g. paging a table):
+ * the old rows stay visible, flagged as `isRefreshing`, until the new ones land.
  */
-export function useApiGet<T>(path: string | null) {
+export function useApiGet<T>(path: string | null, options: { keepPreviousData?: boolean } = {}) {
   const [attempt, setAttempt] = useState(0);
   const [settled, setSettled] = useState<Settled<T> | null>(null);
   const key = `${path}#${attempt}`;
@@ -48,9 +50,12 @@ export function useApiGet<T>(path: string | null) {
   }, [path, key]);
 
   const current = settled?.key === key ? settled : null;
-  // Same path, older attempt, with data: keep showing it while refreshing.
+  // Older data kept on screen while the new request is in flight: same path
+  // only, unless the caller opted into keeping it across paths.
   const previous =
-    !current && settled?.path === path && settled.data !== undefined ? settled : null;
+    !current && settled?.data !== undefined && (settled.path === path || options.keepPreviousData)
+      ? settled
+      : null;
   const shown = current ?? previous;
   const retry = useCallback(() => setAttempt((n) => n + 1), []);
 

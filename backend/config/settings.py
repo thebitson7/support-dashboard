@@ -61,6 +61,7 @@ INSTALLED_APPS = [
     "core",
     "accounts",
     "working_hours",
+    "tickets",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
@@ -176,6 +177,12 @@ USE_TZ = True
 # --- Static files ------------------------------------------------------------
 
 STATIC_URL = "static/"
+
+
+# --- Uploaded files ----------------------------------------------------------
+
+MEDIA_URL = "media/"
+MEDIA_ROOT = BASE_DIR / "media"
 
 
 # --- Email -------------------------------------------------------------------

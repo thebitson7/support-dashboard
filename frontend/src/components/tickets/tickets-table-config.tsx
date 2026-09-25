@@ -3,19 +3,15 @@
 import {
   columnFilteringFeature,
   createColumnHelper,
-  createFilteredRowModel,
-  createPaginatedRowModel,
-  createSortedRowModel,
-  filterFn_betweenInclusive,
-  filterFn_equalsString,
-  filterFn_includesString,
   globalFilteringFeature,
   rowPaginationFeature,
   rowSortingFeature,
-  sortFn_alphanumeric,
-  sortFn_basic,
   tableFeatures,
   useTable,
+  type ColumnFiltersState,
+  type PaginationState,
+  type SortingState,
+  type Updater,
 } from "@tanstack/react-table";
 
 import type { AmsTicket } from "@/types/tickets";
@@ -27,25 +23,16 @@ import {
   TextCell,
 } from "@/components/tickets/cells";
 
-// --- Features: only what the table uses -------------------------------------
+// --- Features ------------------------------------------------------------------
+// Server-side table: the API sorts, filters and paginates, so no client row
+// models are needed. The features remain for their state + column APIs
+// (sort toggles, filter values, page navigation).
 
 const features = tableFeatures({
   columnFilteringFeature,
   globalFilteringFeature,
   rowSortingFeature,
   rowPaginationFeature,
-  filteredRowModel: createFilteredRowModel(),
-  sortedRowModel: createSortedRowModel(),
-  paginatedRowModel: createPaginatedRowModel(),
-  filterFns: {
-    includesString: filterFn_includesString,
-    equalsString: filterFn_equalsString,
-    betweenInclusive: filterFn_betweenInclusive,
-  },
-  sortFns: {
-    alphanumeric: sortFn_alphanumeric,
-    basic: sortFn_basic,
-  },
 });
 
 // --- Columns: exactly the real system's 11, in order -------------------------
@@ -55,116 +42,122 @@ const helper = createColumnHelper<typeof features, AmsTicket>();
 export const columns = helper.columns([
   helper.accessor("siteName", {
     header: "Site Name",
-    sortFn: "alphanumeric",
-    filterFn: "equalsString",
     cell: (ctx) => <TextCell value={ctx.getValue()} strong />,
   }),
   helper.accessor("siteOcn", {
     header: "Site OCN",
-    sortFn: "alphanumeric",
     cell: (ctx) => <TextCell value={ctx.getValue()} mono />,
   }),
   helper.accessor("cmsTicketNo", {
     header: "CMS Next Ticket No",
-    sortFn: "alphanumeric",
     cell: (ctx) => <TextCell value={ctx.getValue()} mono />,
   }),
   helper.accessor("receivedAt", {
     header: "Ticket Received Date Time",
-    sortFn: "basic",
     sortDescFirst: true,
-    filterFn: "betweenInclusive",
-    enableGlobalFilter: false,
     cell: (ctx) => <DateTimeCell value={ctx.getValue()} />,
   }),
   helper.accessor("status", {
     header: "Status",
-    sortFn: "alphanumeric",
-    filterFn: "equalsString",
     cell: (ctx) => <StatusCell status={ctx.getValue()} />,
   }),
   helper.accessor("pre", {
     header: "Pre",
     enableSorting: false,
-    enableGlobalFilter: false,
     cell: (ctx) => <PreCell checked={ctx.getValue()} />,
   }),
   helper.accessor((row) => row.closedBy ?? undefined, {
     id: "closedBy",
     header: "Ticket Closed By",
-    sortFn: "alphanumeric",
-    sortUndefined: "last",
     cell: (ctx) => <TextCell value={ctx.getValue()} />,
   }),
   helper.accessor("createdBy", {
     header: "Created By",
-    sortFn: "alphanumeric",
     cell: (ctx) => <TextCell value={ctx.getValue()} />,
   }),
   helper.accessor("durationHours", {
     header: "Total Duration (Hours)",
-    sortFn: "basic",
     sortDescFirst: true,
-    enableGlobalFilter: false,
     cell: (ctx) => <DurationCell value={ctx.getValue()} />,
   }),
   helper.accessor((row) => row.cmsClosedOn ?? undefined, {
     id: "cmsClosedOn",
     header: "CMS Ticket Closed On",
-    sortFn: "basic",
     sortDescFirst: true,
-    sortUndefined: "last",
-    enableGlobalFilter: false,
     cell: (ctx) => <DateTimeCell value={ctx.getValue()} />,
   }),
   helper.accessor((row) => row.serviceClosedDate ?? undefined, {
     id: "serviceClosedDate",
     header: "Service Closed Date",
-    sortFn: "basic",
     sortDescFirst: true,
-    sortUndefined: "last",
-    enableGlobalFilter: false,
     cell: (ctx) => <DateTimeCell value={ctx.getValue()} />,
   }),
 ]);
 
-/** The text columns the search box scans. */
-const SEARCHABLE = new Set([
-  "siteName",
-  "siteOcn",
-  "cmsTicketNo",
-  "status",
-  "closedBy",
-  "createdBy",
-]);
-
 export const PAGE_SIZES = [25, 50, 100, 200] as const;
 
-// Module-level so their identity is stable across renders (the table treats
-// changed option objects as new input and would recompute its row models).
-const INITIAL_STATE = {
+// --- State (owned by the page, since it drives the API request) ---------------
+
+export type TicketsViewState = {
+  sorting: SortingState;
+  pagination: PaginationState;
+  globalFilter: string;
+  columnFilters: ColumnFiltersState;
+};
+
+export const DEFAULT_VIEW: TicketsViewState = {
   // Newest ticket first.
   sorting: [{ id: "receivedAt", desc: true }],
   pagination: { pageIndex: 0, pageSize: 50 },
+  globalFilter: "",
+  columnFilters: [],
 };
 
-// The default only samples the first row, which would wrongly drop
-// "Ticket Closed By" (the newest rows are Open, so it starts empty).
-const canGlobalFilter = (column: { id: string }) => SEARCHABLE.has(column.id);
+const resolve = <T,>(updater: Updater<T>, previous: T): T =>
+  typeof updater === "function" ? (updater as (old: T) => T)(previous) : updater;
 
-export function useTicketsTable(data: AmsTicket[]) {
+export function useTicketsTable(
+  data: AmsTicket[],
+  rowCount: number,
+  view: TicketsViewState,
+  setView: (update: (previous: TicketsViewState) => TicketsViewState) => void,
+) {
+  // Any change to what's being asked for starts again from the first page
+  // (manual pagination has no automatic page reset).
+  const firstPage = (v: TicketsViewState) => ({
+    ...v.pagination,
+    pageIndex: 0,
+  });
+
   return useTable(
     {
       features,
       columns,
       data,
-      initialState: INITIAL_STATE,
-      // Stable per record, so row identity survives sorting/filtering.
+      rowCount,
+      manualPagination: true,
+      manualSorting: true,
+      manualFiltering: true,
+      state: view,
+      onSortingChange: (u) =>
+        setView((v) => ({ ...v, sorting: resolve(u, v.sorting), pagination: firstPage(v) })),
+      onGlobalFilterChange: (u) =>
+        setView((v) => ({
+          ...v,
+          globalFilter: resolve(u, v.globalFilter) ?? "",
+          pagination: firstPage(v),
+        })),
+      onColumnFiltersChange: (u) =>
+        setView((v) => ({
+          ...v,
+          columnFilters: resolve(u, v.columnFilters),
+          pagination: firstPage(v),
+        })),
+      onPaginationChange: (u) => setView((v) => ({ ...v, pagination: resolve(u, v.pagination) })),
+      // Stable per record, so row identity survives page/sort changes.
       getRowId: (row) => row.id,
       // Header clicks flip asc <-> desc instead of cycling through "unsorted".
       enableSortingRemoval: false,
-      globalFilterFn: "includesString",
-      getColumnCanGlobalFilter: canGlobalFilter,
     },
     (state) => ({
       sorting: state.sorting,

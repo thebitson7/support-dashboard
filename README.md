@@ -52,6 +52,9 @@ Run migrations and start the dev server:
 
 ```bash
 python manage.py migrate
+python manage.py seed_users                  # local dev users (password123)
+python manage.py seed_work_logs              # ~90 days of working-hours data
+python manage.py seed_tickets_support_data   # sites, customers, work-done codes
 python manage.py runserver 8000
 ```
 

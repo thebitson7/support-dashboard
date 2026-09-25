@@ -6,7 +6,8 @@ import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "cn";
 
 import { EASE } from "@/lib/motion";
-import { SITE_NAMES } from "@/lib/mock-tickets";
+import { searchSites } from "@/lib/tickets-api";
+import { SearchCombobox, type ComboOption } from "@/components/common/search-combobox";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -19,21 +20,25 @@ import {
 } from "@/components/ui/select";
 import type { TicketsTable } from "@/components/tickets/tickets-table-config";
 
-const DAY_MS = 86_400_000;
 const ALL_STATUSES = "All";
-const ALL_SITES = "All sites";
-const SORTED_SITES = [...SITE_NAMES].sort((a, b) => a.localeCompare(b));
 
 type DateRange = [number, number];
 
-/** epoch ms -> "YYYY-MM-DD" for <input type="date"> (UTC, matching the table). */
+/** epoch ms -> "YYYY-MM-DD" for <input type="date"> (local day, matching the table). */
 function toInputDate(ms: number) {
-  return Number.isFinite(ms) ? new Date(ms).toISOString().slice(0, 10) : "";
+  if (!Number.isFinite(ms)) return "";
+  const d = new Date(ms);
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`;
 }
 
-/** "YYYY-MM-DD" -> epoch ms at the start of that UTC day. */
-function fromInputDate(value: string) {
-  return value ? Date.parse(`${value}T00:00:00Z`) : NaN;
+/** "YYYY-MM-DD" -> epoch ms at local midnight (or at the day's last ms with `endOfDay`). */
+function fromInputDate(value: string, endOfDay = false) {
+  if (!value) return NaN;
+  const [y, m, d] = value.split("-").map(Number);
+  return endOfDay
+    ? new Date(y, m - 1, d, 23, 59, 59, 999).getTime()
+    : new Date(y, m - 1, d).getTime();
 }
 
 function Field({ label, children }: { label: string; children: ReactNode }) {
@@ -65,7 +70,7 @@ export function TicketsToolbar({
   const received = table.getColumn("receivedAt");
 
   const statusValue = (status?.getFilterValue() as string | undefined) ?? ALL_STATUSES;
-  const siteValue = (site?.getFilterValue() as string | undefined) ?? ALL_SITES;
+  const siteValue = (site?.getFilterValue() as ComboOption | undefined) ?? null;
   const range = received?.getFilterValue() as DateRange | undefined;
   const from = range ? toInputDate(range[0]) : "";
   const to = range ? toInputDate(range[1]) : "";
@@ -74,14 +79,14 @@ export function TicketsToolbar({
   // Both ends are inclusive whole days. An open end is +/-Infinity.
   const setRange = (nextFrom: string, nextTo: string) => {
     const start = fromInputDate(nextFrom);
-    const end = fromInputDate(nextTo);
+    const end = fromInputDate(nextTo, true);
     if (Number.isNaN(start) && Number.isNaN(end)) {
       received?.setFilterValue(undefined);
       return;
     }
     received?.setFilterValue([
       Number.isNaN(start) ? -Infinity : start,
-      Number.isNaN(end) ? Infinity : end + DAY_MS - 1,
+      Number.isNaN(end) ? Infinity : end,
     ] satisfies DateRange);
   };
 
@@ -155,24 +160,16 @@ export function TicketsToolbar({
                 </Field>
 
                 <Field label="Site Name">
-                  <Select
+                  <SearchCombobox
+                    aria-label="Filter by site"
                     value={siteValue}
-                    onValueChange={(value) =>
-                      site?.setFilterValue(value === ALL_SITES ? undefined : value)
-                    }
-                  >
-                    <SelectTrigger className="w-full" aria-label="Filter by site">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent className="max-h-72">
-                      <SelectItem value={ALL_SITES}>{ALL_SITES}</SelectItem>
-                      {SORTED_SITES.map((name) => (
-                        <SelectItem key={name} value={name}>
-                          {name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                    onChange={(option) => site?.setFilterValue(option ?? undefined)}
+                    loadOptions={searchSites}
+                    placeholder="All sites"
+                    emptyText="No sites match."
+                    clearable
+                    className="[&_input]:h-8"
+                  />
                 </Field>
 
                 <Field label="Received from">
