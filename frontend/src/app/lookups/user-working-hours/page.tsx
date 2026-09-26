@@ -1,11 +1,11 @@
 "use client";
 
 import { useLayoutEffect, useMemo, useState, type ReactNode } from "react";
+import Link from "next/link";
 import { AnimatePresence, motion } from "framer-motion";
 import {
+  ClipboardList,
   Clock,
-  LoaderCircle,
-  Plus,
   RotateCw,
   ShieldAlert,
   TriangleAlert,
@@ -14,39 +14,20 @@ import {
   WifiOff,
   type LucideIcon,
 } from "lucide-react";
-import { toast } from "sonner";
 import { cn } from "cn";
 
-import type { StaffUser, WorkingHoursSummary, WorkLogEntry } from "@/types/working-hours";
-import { ApiError, apiDelete } from "@/lib/api";
+import type { StaffUser, WorkingHoursSummary } from "@/types/working-hours";
+import type { ApiError } from "@/lib/api";
 import { displayName, useAuth } from "@/lib/auth";
-import { formatDateDisplay } from "@/lib/local-datetime";
 import { EASE, markChoreographyStart } from "@/lib/motion";
-import {
-  entryMinutes,
-  formatTimeRange,
-  toPeriodSummary,
-  userQuery,
-  WORK_CATEGORIES,
-} from "@/lib/working-hours";
-import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
+import { toPeriodSummary, userQuery } from "@/lib/working-hours";
 import { useApiGet } from "@/hooks/use-api";
 import { PeriodCardsSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { MotionRoot } from "@/components/dashboard/motion-root";
 import { PeriodCards } from "@/components/dashboard/period-cards";
-import { LogHoursDialog } from "@/components/working-hours/log-hours-dialog";
-import { TodayEntries } from "@/components/working-hours/today-entries";
 import { UserPicker } from "@/components/working-hours/user-picker";
-import { Button } from "@/components/ui/button";
+import { Button, buttonVariants } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import {
-  AlertDialog,
-  AlertDialogClose,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogTitle,
-} from "@/components/ui/dialog";
-import { Toaster } from "@/components/ui/sonner";
 
 const fade = {
   initial: { opacity: 0 },
@@ -272,178 +253,43 @@ function Summary({ path, summary }: { path: string; summary: SummaryResult }) {
   );
 }
 
-// --- Logging hours ------------------------------------------------------------
-
-type DeleteState = { entry: WorkLogEntry; pending: boolean; error: string | null };
+// --- One person's hours ----------------------------------------------------------
 
 /**
- * Everything below the page title for one person: their period summary,
- * today's entries, and the Log Hours / edit / delete flows. Owns both
- * requests, so any save refreshes the cards and the list together.
- *
- * `header` receives the Log Hours button (null until there's someone to log
- * for), so each view can place it in its own header.
+ * Everything below the page title for one person: their period summary.
+ * The day-by-day detail, and logging hours, live on the Job Sheet page,
+ * which `header` receives a link to (null until there's someone to show).
  */
 function HoursWorkspace({
   userId,
-  subjectName,
   enabled,
   header,
   placeholder,
 }: {
   /** Whose hours (admin view); null = the signed-in user's own. */
   userId: string | null;
-  /** Set when an admin is looking at someone else. */
-  subjectName?: string;
   enabled: boolean;
-  header: (logButton: ReactNode) => ReactNode;
+  header: (jobSheetLink: ReactNode) => ReactNode;
   /** Shown instead of the summary while `enabled` is false. */
   placeholder?: ReactNode;
 }) {
-  const query = userQuery(userId);
-  const summaryPath = `/working-hours/summary/${query}`;
+  const summaryPath = `/working-hours/summary/${userQuery(userId)}`;
   const summary = useApiGet<WorkingHoursSummary>(enabled ? summaryPath : null);
-  // "Today" as the API cut it (the viewer's profile zone), not the browser's
-  // clock, so the list and the Today card always mean the same day.
-  const today = summary.data?.periods.find((p) => p.key === "today")?.start_date ?? null;
-  const entriesPath =
-    enabled && today
-      ? `/working-hours/entries/${query}${query ? "&" : "?"}date=${encodeURIComponent(today)}`
-      : null;
-  const entries = useApiGet<WorkLogEntry[]>(entriesPath);
+  const jobSheetHref = userId
+    ? `/job-sheets?${new URLSearchParams({ user_id: userId })}`
+    : "/job-sheets";
 
-  const [dialog, setDialog] = useState<{ open: boolean; key: number; entry: WorkLogEntry | null }>({
-    open: false,
-    key: 0,
-    entry: null,
-  });
-  const [deleting, setDeleting] = useState<DeleteState | null>(null);
-
-  const { retry: retrySummary } = summary;
-  const { retry: retryEntries } = entries;
-  const refresh = () => {
-    retrySummary();
-    retryEntries();
-  };
-  const openLog = (entry: WorkLogEntry | null) =>
-    setDialog((d) => ({ open: true, key: d.key + 1, entry }));
-
-  const entryLabel = (entry: WorkLogEntry) =>
-    `${formatMinutes(entryMinutes(entry))} ${
-      WORK_CATEGORIES.find((c) => c.value === entry.category)?.label
-    } (${formatTimeRange(entry)}) on ${formatDateDisplay(entry.date)}`;
-
-  async function confirmDelete() {
-    if (!deleting) return;
-    const { entry } = deleting;
-    setDeleting({ entry, pending: true, error: null });
-    try {
-      await apiDelete(`/working-hours/entries/${entry.id}/`);
-      toast.success("Entry deleted", { description: entryLabel(entry) });
-      setDeleting(null);
-      refresh();
-    } catch (err) {
-      if (err instanceof ApiError && err.status === 404) {
-        // Already gone (deleted elsewhere): the refreshed list will show that.
-        setDeleting(null);
-        refresh();
-        return;
-      }
-      setDeleting({
-        entry,
-        pending: false,
-        error:
-          err instanceof ApiError && err.status === 403
-            ? "You can only delete your own entries."
-            : "Couldn't delete this entry. Try again.",
-      });
-    }
-  }
-
-  const logButton =
-    enabled && !summary.error ? (
-      <Button onClick={() => openLog(null)} disabled={!today}>
-        <Plus aria-hidden />
-        Log Hours
-      </Button>
-    ) : null;
+  const jobSheetLink = enabled ? (
+    <Link href={jobSheetHref} className={buttonVariants({ variant: "outline", size: "lg" })}>
+      <ClipboardList aria-hidden />
+      View Job Sheet
+    </Link>
+  ) : null;
 
   return (
     <>
-      {header(logButton)}
-
-      {!enabled ? (
-        placeholder
-      ) : (
-        <>
-          <Summary path={summaryPath} summary={summary} />
-          {today && !summary.error && (
-            <TodayEntries
-              today={today}
-              entries={entries.data}
-              error={entries.error}
-              onRetry={retryEntries}
-              onAdd={() => openLog(null)}
-              onEdit={openLog}
-              onDelete={(entry) => setDeleting({ entry, pending: false, error: null })}
-            />
-          )}
-        </>
-      )}
-
-      {today && (
-        <LogHoursDialog
-          key={dialog.key}
-          open={dialog.open}
-          onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
-          userId={userId}
-          subjectName={subjectName}
-          today={today}
-          entry={dialog.entry}
-          onSaved={refresh}
-        />
-      )}
-
-      <AlertDialog
-        open={deleting !== null}
-        onOpenChange={(open) => {
-          if (!open && !deleting?.pending) setDeleting(null);
-        }}
-      >
-        <AlertDialogContent>
-          {deleting && (
-            <>
-              <div className="grid gap-1">
-                <AlertDialogTitle>Delete this entry?</AlertDialogTitle>
-                <AlertDialogDescription>
-                  {entryLabel(deleting.entry)} will be removed from{" "}
-                  {subjectName ? `${subjectName}'s` : "your"} working hours.
-                </AlertDialogDescription>
-              </div>
-              {deleting.error && (
-                <p role="alert" className="text-sm font-medium text-destructive">
-                  {deleting.error}
-                </p>
-              )}
-              <div className="flex justify-end gap-2">
-                <AlertDialogClose render={<Button variant="ghost" />} disabled={deleting.pending}>
-                  Cancel
-                </AlertDialogClose>
-                <Button
-                  variant="destructive"
-                  onClick={() => void confirmDelete()}
-                  disabled={deleting.pending}
-                >
-                  {deleting.pending && (
-                    <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
-                  )}
-                  Delete
-                </Button>
-              </div>
-            </>
-          )}
-        </AlertDialogContent>
-      </AlertDialog>
+      {header(jobSheetLink)}
+      {enabled ? <Summary path={summaryPath} summary={summary} /> : placeholder}
     </>
   );
 }
@@ -461,9 +307,8 @@ function AdminView() {
           header is never remounted by the first selection. */}
       <HoursWorkspace
         userId={selectedId}
-        subjectName={selected ? displayName(selected) : undefined}
         enabled={Boolean(selected)}
-        header={(logButton) => (
+        header={(jobSheetLink) => (
           <header className="flex flex-wrap items-center justify-between gap-4">
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight">User Working Hours</h1>
@@ -475,7 +320,7 @@ function AdminView() {
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <UserPicker users={users.data} value={selectedId} onChange={setSelectedId} />
-              {logButton}
+              {jobSheetLink}
             </div>
           </header>
         )}
@@ -485,7 +330,7 @@ function AdminView() {
           ) : (
             <StateCard icon={UserRound} title="No one selected yet">
               Search for a team member in the <strong className="font-semibold">Viewing</strong> box
-              to see their hours for today, this week and this month, and to log hours for them.
+              to see their hours for today, this week and this month.
             </StateCard>
           )
         }
@@ -505,13 +350,13 @@ function StaffView() {
     <HoursWorkspace
       userId={null}
       enabled
-      header={(logButton) => (
+      header={(jobSheetLink) => (
         <header className="flex flex-wrap items-center justify-between gap-4">
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Your Working Hours</h1>
             <p className="text-label">Your logged AMS and Non-AMS hours against goal</p>
           </div>
-          {logButton}
+          {jobSheetLink}
         </header>
       )}
     />
@@ -527,7 +372,6 @@ export default function UserWorkingHoursPage() {
       <div className="@container mx-auto flex w-full max-w-7xl flex-col gap-6">
         {user.role === "admin" ? <AdminView /> : <StaffView />}
       </div>
-      <Toaster />
     </MotionRoot>
   );
 }

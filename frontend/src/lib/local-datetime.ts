@@ -99,6 +99,42 @@ export function formatLocalDate(p: Pick<LocalParts, "year" | "month" | "day">): 
 
 export const todayLocalDate = (): string => formatLocalDate(partsOfDate(new Date()));
 
+/** Today's "YYYY-MM-DD" in an IANA zone (a user's profile zone, not the browser's). */
+export function todayInZone(timeZone: string): string {
+  try {
+    // en-CA formats as YYYY-MM-DD.
+    return new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    }).format(new Date());
+  } catch {
+    return todayLocalDate(); // unknown zone: fall back to the browser's
+  }
+}
+
+/** "2026-03-01" + -1 -> "2026-02-28" (calendar arithmetic, no time zone involved). */
+export function addDaysToDate(value: string, days: number): string {
+  const p = parseLocalDate(value);
+  if (!p) return value;
+  const d = new Date(p.year, p.month - 1, p.day + days);
+  return formatLocalDate({ year: d.getFullYear(), month: d.getMonth() + 1, day: d.getDate() });
+}
+
+const LONG_DATE_FMT = new Intl.DateTimeFormat("en-GB", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
+/** "2026-03-04" -> "Wednesday 4 March 2026". */
+export function formatDateLong(value: string): string {
+  const p = parseLocalDate(value);
+  return p ? LONG_DATE_FMT.format(new Date(p.year, p.month - 1, p.day)) : "";
+}
+
 /** "25 Dec 2026", or "25 Dec" with `withYear: false` (e.g. a yearly holiday). */
 export function formatDateDisplay(value: string, { withYear = true } = {}): string {
   const p = parseLocalDate(value);

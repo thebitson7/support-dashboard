@@ -88,7 +88,8 @@ class Command(DevOnlyCommand):
             self.stderr.write("No staff users found. Run `python manage.py seed_users` first.")
             return
 
-        deleted, _ = WorkLogEntry.objects.filter(user__in=users).delete()
+        # Manual entries only: auto entries belong to ticket activities.
+        deleted, _ = WorkLogEntry.objects.filter(user__in=users, ticket_activity__isnull=True).delete()
         rows = []
         for user in users:
             today = local_today(user)  # each user's own calendar day

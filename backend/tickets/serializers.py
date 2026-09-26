@@ -6,6 +6,7 @@ from rest_framework import serializers
 
 from accounts.models import User
 from accounts.serializers import UserRefSerializer
+from working_hours.sync import sync_ticket
 
 from .models import Customer, Site, Ticket, TicketActivity, WorkDoneCode
 
@@ -229,6 +230,8 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         activities = validated_data.pop("activities", [])
         ticket = Ticket.objects.create(**validated_data)
         self._replace_activities(ticket, activities)
+        # Mirror resolved activities into their resolvers' work logs.
+        sync_ticket(ticket)
         return ticket
 
     @transaction.atomic
@@ -249,6 +252,9 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         elif instance.activities.exists():
             # Activities untouched: a sent total still can't contradict them.
             self._sync_total(instance)
+        # Work logs follow the activities (replaced ones' entries went with
+        # them by CASCADE) and the ticket number shown in their reference.
+        sync_ticket(instance)
 
         if old_pdf and instance.pdf_attachment.name != old_pdf:
             # Replaced or removed: delete the old file once the update commits.

@@ -1,24 +1,22 @@
 "use client";
 
 import { useMemo, useRef, useState, type FormEvent } from "react";
-import { CircleAlert, Clock, LoaderCircle, X } from "lucide-react";
+import { CircleAlert, Clock, Info, LoaderCircle, X } from "lucide-react";
 import { toast } from "sonner";
 
-import type { WorkCategory, WorkLogEntry } from "@/types/working-hours";
+import type { WorkLogEntry } from "@/types/working-hours";
 import { ApiError, apiPatch, apiPost } from "@/lib/api";
 import { formatDateDisplay } from "@/lib/local-datetime";
 import { formatTimeRange, spanMinutes, userQuery, WORK_CATEGORIES } from "@/lib/working-hours";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import { Field, RequiredMark, describedBy, errorId, fieldId } from "@/components/common/form-field";
 import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
-import { ChoiceSelect } from "@/components/tickets/ticket-form/fields";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 
 type Values = {
   date: string;
-  category: WorkCategory | "";
   /** "HH:mm" or "". */
   start_time: string;
   end_time: string;
@@ -26,7 +24,7 @@ type Values = {
 };
 type FieldName = keyof Values;
 /** Form order: "go to the first error" follows it. */
-const FIELDS: FieldName[] = ["date", "category", "start_time", "end_time", "note"];
+const FIELDS: FieldName[] = ["date", "start_time", "end_time", "note"];
 
 // Same rule and wording as the API (working_hours/serializers.py): an entry
 // lies within its one date, so a shift crossing midnight is two entries.
@@ -38,7 +36,6 @@ function validate(values: Values, today: string): Partial<Record<FieldName, stri
   if (!values.date) errors.date = "Choose a date.";
   // "YYYY-MM-DD" strings compare correctly as text.
   else if (values.date > today) errors.date = "You can't log hours for a future date.";
-  if (!values.category) errors.category = "Choose AMS or Non-AMS.";
   if (!values.start_time) errors.start_time = "Choose a start time.";
   if (!values.end_time) errors.end_time = "Choose an end time.";
   else if (values.start_time && spanMinutes(values.start_time, values.end_time) === null) {
@@ -51,6 +48,11 @@ function validate(values: Values, today: string): Partial<Record<FieldName, stri
  * Log a new entry (entry = null) or edit one. Mount with a fresh `key` per
  * opening so the form starts clean.
  *
+ * Manual entries are Non-AMS only: AMS time arrives by itself from ticket
+ * activities (auto entries, which never open here). New entries are sent as
+ * Non-AMS; an edit doesn't send a category, so an older hand-logged AMS entry
+ * keeps its own.
+ *
  * `subjectName` is set when an admin logs for someone else: the copy then
  * names that person, so it's unmistakable whose record changes.
  */
@@ -60,6 +62,7 @@ export function LogHoursDialog({
   userId,
   subjectName,
   today,
+  defaultDate = today,
   entry,
   onSaved,
 }: {
@@ -68,8 +71,10 @@ export function LogHoursDialog({
   /** Whose entry (admin view); null = the signed-in user's own. */
   userId: string | null;
   subjectName?: string;
-  /** "YYYY-MM-DD" in the viewer's zone, as the summary computed it. */
+  /** "YYYY-MM-DD" in the viewer's profile zone: later dates are refused. */
   today: string;
+  /** A new entry's date (e.g. the day on screen); defaults to `today`. */
+  defaultDate?: string;
   entry: WorkLogEntry | null;
   onSaved: () => void;
 }) {
@@ -77,12 +82,11 @@ export function LogHoursDialog({
     entry
       ? {
           date: entry.date,
-          category: entry.category,
           start_time: entry.start_time,
           end_time: entry.end_time,
           note: entry.note,
         }
-      : { date: today, category: "", start_time: "", end_time: "", note: "" },
+      : { date: defaultDate, start_time: "", end_time: "", note: "" },
   );
   const [touched, setTouched] = useState<Partial<Record<FieldName, boolean>>>({});
   const [attempted, setAttempted] = useState(false);
@@ -132,7 +136,7 @@ export function LogHoursDialog({
     // No `hours`: the server computes it from the times.
     const body = {
       date: values.date,
-      category: values.category,
+      ...(entry ? {} : { category: "non_ams" }),
       start_time: values.start_time,
       end_time: values.end_time,
       note: values.note.trim(),
@@ -143,7 +147,9 @@ export function LogHoursDialog({
       } else {
         await apiPost<WorkLogEntry>(`/working-hours/entries/${userQuery(userId)}`, body);
       }
-      const category = WORK_CATEGORIES.find((c) => c.value === values.category)?.label;
+      const category = WORK_CATEGORIES.find(
+        (c) => c.value === (entry?.category ?? "non_ams"),
+      )?.label;
       toast.success(entry ? "Entry updated" : "Hours logged", {
         description: `${formatMinutes(minutes ?? 0)} ${category} · ${formatTimeRange(values)} on ${formatDateDisplay(values.date)}${
           forSomeoneElse ? ` for ${subjectName}` : ""
@@ -195,7 +201,7 @@ export function LogHoursDialog({
     >
       <DialogContent
         className="max-h-[calc(100dvh-2rem)] w-[min(30rem,calc(100vw-2rem))]"
-        initialFocus={() => document.getElementById(fieldId(entry ? "start_time" : "category"))}
+        initialFocus={() => document.getElementById(fieldId("start_time"))}
       >
         <form onSubmit={submit} noValidate aria-busy={submitting} className="flex min-h-0 flex-col">
           <header className="flex items-start justify-between gap-4 border-b border-border px-6 pt-5 pb-4">
@@ -226,8 +232,20 @@ export function LogHoursDialog({
                 {general}
               </div>
             )}
+            <p className="mb-4 flex items-start gap-2 rounded-lg bg-muted/60 px-3 py-2 text-sm text-muted-foreground">
+              <Info className="mt-0.5 size-4 shrink-0" aria-hidden />
+              {entry?.category === "ams"
+                ? "An older AMS entry logged by hand; it stays AMS. New AMS time is recorded automatically from ticket activities."
+                : "This logs Non-AMS work. AMS time is recorded automatically from ticket activities."}
+            </p>
             <div className="grid gap-x-5 gap-y-4 sm:grid-cols-2">
-              <Field name="date" label="Date" required error={error("date")}>
+              <Field
+                name="date"
+                label="Date"
+                required
+                error={error("date")}
+                className="sm:col-span-2"
+              >
                 <DateTimePicker
                   id={fieldId("date")}
                   mode="date"
@@ -237,17 +255,6 @@ export function LogHoursDialog({
                   invalid={Boolean(error("date"))}
                   aria-labelledby={`${fieldId("date")}-label`}
                   aria-describedby={error("date") ? errorId("date") : undefined}
-                />
-              </Field>
-              <Field name="category" label="Category" required error={error("category")}>
-                <ChoiceSelect
-                  name="category"
-                  value={values.category}
-                  onChange={(v) => set("category", v as WorkCategory | "")}
-                  onBlur={() => touch("category")}
-                  choices={WORK_CATEGORIES}
-                  placeholder="AMS or Non-AMS"
-                  error={error("category")}
                 />
               </Field>
               {(["start_time", "end_time"] as const).map((name) => (

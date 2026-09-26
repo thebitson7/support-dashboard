@@ -40,7 +40,18 @@ class WorkLogEntry(models.Model):
     # as a column because the period summaries aggregate it directly.
     hours = models.DecimalField(max_digits=5, decimal_places=2, editable=False)
     # Optional context ("Tan Tock Seng LIS outage"), shown in the entries list.
+    # Auto entries carry their ticket reference here.
     note = models.CharField(max_length=200, blank=True)
+    # Set = an "auto" entry, mirrored from this ticket activity by
+    # working_hours.sync and changed only through it; unset = logged by hand.
+    ticket_activity = models.OneToOneField(
+        "tickets.TicketActivity",
+        on_delete=models.CASCADE,
+        null=True,
+        blank=True,
+        editable=False,
+        related_name="work_log_entry",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -50,6 +61,10 @@ class WorkLogEntry(models.Model):
 
     def __str__(self):
         return f"{self.user} · {self.date} · {self.get_category_display()} · {self.hours}h"
+
+    @property
+    def is_auto(self) -> bool:
+        return self.ticket_activity_id is not None
 
     def save(self, *args, **kwargs):
         # Always recomputed, whatever `hours` was set to: the times are the truth.

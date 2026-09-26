@@ -34,6 +34,14 @@ export type WorkLogEntry = {
   /** Computed by the server from the times (2 decimal places). */
   hours: number;
   note: string;
+  /**
+   * Mirrored from a ticket activity (always AMS): read-only here, it changes
+   * only by editing the activity on its ticket. False = logged by hand.
+   */
+  is_auto: boolean;
+  /** Auto entries: the ticket's id and "Ticket #… — Troubleshooting". */
+  ticket: number | null;
+  ticket_reference: string | null;
   created_at: string;
 };
 

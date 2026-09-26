@@ -5,6 +5,7 @@ from rest_framework import serializers
 
 from .models import WorkLogEntry, hours_between
 from .periods import local_today
+from .sync import ticket_reference
 
 MAX_DAY_HOURS = Decimal(24)
 
@@ -28,6 +29,13 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     Dates are checked against the *viewer's* calendar, the same zone the
     summary cuts its periods in: omitted means the viewer's today, and a date
     after it is refused.
+
+    Writes here are manual entries, which are Non-AMS only: AMS time comes
+    from ticket activities (auto entries, see working_hours.sync), which this
+    serializer never writes; the view refuses to change them. `category` may
+    be omitted (it defaults to Non-AMS) but can't be set to AMS. An older
+    hand-logged AMS entry can still be edited without resending its category.
+    Reads mark auto entries (`is_auto`) and name their ticket.
     """
 
     date = serializers.DateField(required=False)
@@ -36,6 +44,10 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     hours = serializers.DecimalField(
         max_digits=5, decimal_places=2, coerce_to_string=False, read_only=True
     )
+    category = serializers.ChoiceField(choices=WorkLogEntry.Category.choices, required=False)
+    is_auto = serializers.BooleanField(read_only=True)
+    ticket = serializers.SerializerMethodField()
+    ticket_reference = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkLogEntry
@@ -48,6 +60,9 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
             "category",
             "hours",
             "note",
+            "is_auto",
+            "ticket",
+            "ticket_reference",
             "created_at",
         ]
         read_only_fields = ["id", "user", "created_at"]
@@ -62,11 +77,30 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     def validate_note(self, value):
         return value.strip()
 
+    def validate_category(self, value):
+        if value == WorkLogEntry.Category.AMS:
+            raise serializers.ValidationError(
+                "AMS time is recorded automatically from ticket activities. "
+                "Only Non-AMS work can be logged here."
+            )
+        return value
+
+    def get_ticket(self, entry) -> int | None:
+        """The linked ticket's id (auto entries), for linking to it."""
+        return entry.ticket_activity.ticket_id if entry.ticket_activity_id else None
+
+    def get_ticket_reference(self, entry) -> str | None:
+        """"Ticket #… — Troubleshooting", read live from the ticket (auto entries)."""
+        return ticket_reference(entry.ticket_activity) if entry.ticket_activity_id else None
+
     def validate(self, attrs):
         instance = self.instance
 
         def final(field):
             return attrs[field] if field in attrs else getattr(instance, field)
+
+        if instance is None:
+            attrs.setdefault("category", WorkLogEntry.Category.NON_AMS)
 
         today = local_today(self.context["request"].user)
         day = attrs.get("date", instance.date if instance else today)

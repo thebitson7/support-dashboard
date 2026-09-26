@@ -1,7 +1,8 @@
 from functools import cached_property
 
 from django.utils.dateparse import parse_date
-from rest_framework.exceptions import NotFound, ValidationError
+from rest_framework import status
+from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateDestroyAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -14,6 +15,7 @@ from accounts.serializers import UserSummarySerializer
 from .models import WorkLogEntry
 from .periods import local_today, summarize
 from .serializers import WorkLogEntrySerializer
+from .sync import ticket_label
 
 # Ids beyond this overflow the database integer type (a 500, not a 400).
 MAX_ID = 2**63 - 1
@@ -117,7 +119,11 @@ class EntryListCreateView(ListCreateAPIView):
                 raise ValidationError({"date": "Use a YYYY-MM-DD date."})
         else:
             day = local_today(self.request.user)
-        return WorkLogEntry.objects.filter(user=self.target, date=day).order_by("start_time", "id")
+        return (
+            WorkLogEntry.objects.filter(user=self.target, date=day)
+            .select_related("ticket_activity__ticket")
+            .order_by("start_time", "id")
+        )
 
     def get_serializer_context(self):
         context = super().get_serializer_context()
@@ -129,14 +135,40 @@ class EntryListCreateView(ListCreateAPIView):
         serializer.save(user=self.target)
 
 
+class AutoEntryLocked(APIException):
+    status_code = status.HTTP_409_CONFLICT
+    default_code = "auto_entry"
+
+
 class EntryDetailView(RetrieveUpdateDestroyAPIView):
     """
     GET / PATCH {date, start_time, end_time, category, note} / DELETE one entry. Staff: only
     their own (someone else's is a 403). Admin: anyone's, except that entries
     of deactivated users are a 404, as on the summary. The owner never changes.
+
+    Auto entries (mirrored from ticket activities) can be read but not
+    changed here: PATCH / DELETE answer 409, pointing at the ticket.
     """
 
     permission_classes = [IsAuthenticated, IsAdminRoleOrOwner]
     serializer_class = WorkLogEntrySerializer
     http_method_names = ["get", "patch", "delete", "head", "options"]
-    queryset = WorkLogEntry.objects.filter(user__is_active=True).select_related("user")
+    queryset = WorkLogEntry.objects.filter(user__is_active=True).select_related(
+        "user", "ticket_activity__ticket"
+    )
+
+    def _refuse_auto(self):
+        entry = self.get_object()  # 404 / 403 first, as for any entry
+        if entry.is_auto:
+            raise AutoEntryLocked(
+                f"This entry comes from {ticket_label(entry.ticket_activity.ticket)} — "
+                "edit the ticket's activity instead."
+            )
+
+    def update(self, request, *args, **kwargs):
+        self._refuse_auto()
+        return super().update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        self._refuse_auto()
+        return super().destroy(request, *args, **kwargs)

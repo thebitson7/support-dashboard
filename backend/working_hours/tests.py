@@ -254,8 +254,11 @@ def entry_url(entry_id):
     return f"{ENTRIES_URL}{entry_id}/"
 
 
-def span(start, end, category="ams", **extra):
-    """An entry body: {"start_time": "09:00", "end_time": "10:30", "category": ...}."""
+def span(start, end, category="non_ams", **extra):
+    """
+    A manual entry body: {"start_time": "09:00", "end_time": "10:30", ...}.
+    Non-AMS: AMS time only arrives from ticket activities (test_auto_entries.py).
+    """
     return {"start_time": start, "end_time": end, "category": category, **extra}
 
 
@@ -303,7 +306,7 @@ class StaffEntryTests(EntryTestCase):
                 "date": "2026-03-04",
                 "start_time": "09:15",
                 "end_time": "11:45",
-                "category": "ams",
+                "category": "non_ams",
                 "hours": 2.5,
                 "note": "LIS outage",
             },
@@ -453,15 +456,15 @@ class EntryTimesTests(EntryTestCase):
         self.assertEqual(WorkLogEntry.objects.get().hours, Decimal("1.00"))
 
     def test_start_and_end_are_required(self):
-        response = self.log({"category": "ams", "hours": 2})
+        response = self.log({"category": "non_ams", "hours": 2})
         self.assertEqual(response.status_code, 400)
         self.assertEqual(set(response.json()), {"start_time", "end_time"})
-        self.assertIn("end_time", self.log({"category": "ams", "start_time": "09:00"}).json())
+        self.assertIn("end_time", self.log({"category": "non_ams", "start_time": "09:00"}).json())
 
     def test_malformed_times_are_rejected(self):
         for bad in ["25:00", "9am", "", "12:60", None]:
             with self.subTest(end_time=bad):
-                response = self.log({"category": "ams", "start_time": "09:00", "end_time": bad})
+                response = self.log({"category": "non_ams", "start_time": "09:00", "end_time": bad})
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("end_time", response.json())
 
@@ -580,8 +583,8 @@ class LoggedHoursReachTheSummaryTests(EntryTestCase):
         self.client.force_authenticate(self.alice)
         self.assertEqual(self.periods()["today"]["total_hours"], 0)
 
-        ams = self.log(span("09:00", "11:30")).json()["id"]  # 2.5 h
-        self.log(span("13:00", "14:15", "non_ams"))  # 1.25 h
+        first = self.log(span("09:00", "11:30")).json()["id"]  # 2.5 h
+        self.log(span("13:00", "14:15"))  # 1.25 h
         self.log(span("09:00", "12:00", date="2026-03-03"))  # yesterday, 3 h
         self.log(span("08:00", "12:00", date="2026-02-27"))  # last week + last month, 4 h
 
@@ -589,7 +592,7 @@ class LoggedHoursReachTheSummaryTests(EntryTestCase):
         today = periods["today"]
         self.assertEqual(
             (today["ams_hours"], today["non_ams_hours"], today["total_hours"], today["percent_complete"]),
-            (2.5, 1.25, 3.75, 47),
+            (0.0, 3.75, 3.75, 47),
         )
         self.assertEqual(periods["yesterday"]["total_hours"], 3.0)
         self.assertEqual(periods["currentWeek"]["total_hours"], 6.75)  # Mon 2 – Sun 8 Mar
@@ -598,17 +601,17 @@ class LoggedHoursReachTheSummaryTests(EntryTestCase):
         self.assertEqual(periods["previousMonth"]["total_hours"], 4.0)
 
         # Editing a time and deleting an entry are reflected just the same.
-        self.client.patch(entry_url(ams), {"end_time": "14:00"}, format="json")  # now 5 h
-        self.assertEqual(self.periods()["today"]["ams_hours"], 5.0)
-        self.client.delete(entry_url(ams))
+        self.client.patch(entry_url(first), {"end_time": "12:00"}, format="json")  # now 3 h
+        self.assertEqual(self.periods()["today"]["non_ams_hours"], 4.25)
+        self.client.delete(entry_url(first))
         self.assertEqual(self.periods()["today"]["total_hours"], 1.25)
 
     def test_hours_an_admin_logs_for_staff_count_for_that_staff_member_only(self):
         self.client.force_authenticate(self.admin)
         self.assertEqual(self.log(span("08:00", "14:00"), user_id=self.bob.pk).status_code, 201)
-        self.assertEqual(self.periods({"user_id": self.bob.pk})["today"]["ams_hours"], 6.0)
+        self.assertEqual(self.periods({"user_id": self.bob.pk})["today"]["non_ams_hours"], 6.0)
 
         self.client.force_authenticate(self.bob)
-        self.assertEqual(self.periods()["today"]["ams_hours"], 6.0)
+        self.assertEqual(self.periods()["today"]["non_ams_hours"], 6.0)
         self.client.force_authenticate(self.alice)
         self.assertEqual(self.periods()["today"]["total_hours"], 0)
