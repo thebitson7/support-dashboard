@@ -18,6 +18,25 @@ export type ApiPeriod = {
   percent_complete: number;
 };
 
+export type WorkCategory = "ams" | "non_ams";
+
+/** One logged block of hours (/api/working-hours/entries/). */
+export type WorkLogEntry = {
+  id: number;
+  /** Owner's user id. */
+  user: number;
+  /** "YYYY-MM-DD". */
+  date: string;
+  /** "HH:mm" on `date`; the end is always after the start (no midnight crossing). */
+  start_time: string;
+  end_time: string;
+  category: WorkCategory;
+  /** Computed by the server from the times (2 decimal places). */
+  hours: number;
+  note: string;
+  created_at: string;
+};
+
 export type WorkingHoursSummary = {
   user: StaffUser;
   /** IANA zone the period boundaries were computed in: the viewer's (requester's) own. */

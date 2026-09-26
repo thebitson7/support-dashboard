@@ -16,7 +16,7 @@ function formatDateTime(ms: number) {
 }
 
 /** Empty values read as a quiet dash, not a blank gap. */
-function Dash() {
+export function Dash() {
   return (
     <span className="text-muted-foreground/60" aria-label="No value">
       —

@@ -83,6 +83,59 @@ const MONTHS_SHORT = [
   "Dec",
 ];
 
+// --- Date-only values ("YYYY-MM-DD", e.g. a holiday) -------------------------------
+
+const DATE_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
+
+/** "2026-12-25" -> parts at midnight; null if not a real calendar date. */
+export function parseLocalDate(value: string): LocalParts | null {
+  const m = DATE_PATTERN.exec(value);
+  return m ? parseLocal(`${m[1]}-${m[2]}-${m[3]}T00:00`) : null;
+}
+
+export function formatLocalDate(p: Pick<LocalParts, "year" | "month" | "day">): string {
+  return `${p.year}-${pad(p.month)}-${pad(p.day)}`;
+}
+
+export const todayLocalDate = (): string => formatLocalDate(partsOfDate(new Date()));
+
+/** "25 Dec 2026", or "25 Dec" with `withYear: false` (e.g. a yearly holiday). */
+export function formatDateDisplay(value: string, { withYear = true } = {}): string {
+  const p = parseLocalDate(value);
+  if (!p) return "";
+  return `${p.day} ${MONTHS_SHORT[p.month - 1]}${withYear ? ` ${p.year}` : ""}`;
+}
+
+// --- Time-only values ("HH:mm", e.g. a work-log entry's start) ---------------------
+
+const TIME_PATTERN = /^(\d{2}):(\d{2})$/;
+
+/** "09:45" -> parts (on a placeholder date); null if not a real time of day. */
+export function parseLocalTime(value: string): LocalParts | null {
+  const m = TIME_PATTERN.exec(value);
+  return m ? parseLocal(`2000-01-01T${m[1]}:${m[2]}`) : null;
+}
+
+export function formatLocalTime(p: Pick<LocalParts, "hour" | "minute">): string {
+  return `${pad(p.hour)}:${pad(p.minute)}`;
+}
+
+export const nowLocalTime = (): string => formatLocalTime(partsOfDate(new Date()));
+
+/** "09:45" -> 585 (minutes since midnight); null if not a time. */
+export function timeToMinutes(value: string): number | null {
+  const p = parseLocalTime(value);
+  return p ? p.hour * 60 + p.minute : null;
+}
+
+/** "14:05" -> "2:05 PM" (fixed format, independent of the browser locale). */
+export function formatTimeDisplay(value: string): string {
+  const p = parseLocalTime(value);
+  if (!p) return "";
+  const { hour12, pm } = to12h(p.hour);
+  return `${hour12}:${pad(p.minute)} ${pm ? "PM" : "AM"}`;
+}
+
 /** 0–23 -> { hour12: 1–12, pm } */
 export function to12h(hour: number): { hour12: number; pm: boolean } {
   return { hour12: hour % 12 === 0 ? 12 : hour % 12, pm: hour >= 12 };

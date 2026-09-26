@@ -1,6 +1,6 @@
 """Role-based DRF permissions, shared by every role-gated endpoint."""
 
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class IsAdminRole(BasePermission):
@@ -35,3 +35,29 @@ class IsAdminRoleOrSelf(BasePermission):
         param = getattr(view, "target_user_param", "user_id")
         requested = request.query_params.get(param)
         return requested is None or requested == str(user.pk)
+
+
+class IsAdminRoleOrOwner(BasePermission):
+    """
+    Object level: admins may act on any record, everyone else only on records
+    whose `user` is themselves. Refused with 403 (as IsAdminRoleOrSelf does),
+    not hidden as a 404.
+    """
+
+    message = "You can only change your own entries."
+
+    def has_object_permission(self, request, view, obj):
+        user = request.user
+        return bool(user and user.is_authenticated and (user.is_admin_role or obj.user_id == user.pk))
+
+
+class IsAdminRoleOrReadOnly(BasePermission):
+    """Reads (GET/HEAD/OPTIONS) for any authenticated user; writes for admin role only."""
+
+    message = "Only admin users can change this data."
+
+    def has_permission(self, request, view):
+        user = request.user
+        if not (user and user.is_authenticated):
+            return False
+        return request.method in SAFE_METHODS or user.is_admin_role

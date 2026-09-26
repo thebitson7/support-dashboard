@@ -5,6 +5,7 @@ from django.db.models import Sum
 from rest_framework import serializers
 
 from accounts.models import User
+from accounts.serializers import UserRefSerializer
 
 from .models import Customer, Site, Ticket, TicketActivity, WorkDoneCode
 
@@ -45,15 +46,25 @@ class SiteSerializer(serializers.ModelSerializer):
 
 
 class CustomerSerializer(serializers.ModelSerializer):
+    # Explicit field: the automatic unique validator would compare the raw,
+    # case-sensitive input and let "singhealth" in beside "SingHealth".
+    name = serializers.CharField(max_length=200)
+
     class Meta:
         model = Customer
         fields = ["id", "name"]
+
+    def validate_name(self, value):
+        value = value.strip()
+        if Customer.objects.filter(name__iexact=value).exclude(pk=getattr(self.instance, "pk", None)).exists():
+            raise serializers.ValidationError("A customer with this name already exists.")
+        return value
 
 
 class WorkDoneCodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkDoneCode
-        fields = ["id", "code", "description"]
+        fields = ["id", "code", "description", "is_active"]
 
 
 # --- List (the AMS Tickets table) ----------------------------------------------
@@ -222,6 +233,11 @@ class TicketWriteSerializer(serializers.ModelSerializer):
 
     @transaction.atomic
     def update(self, instance, validated_data):
+        # Row lock for the whole update: two concurrent edits of one ticket
+        # queue up (last write wins) instead of interleaving their "delete
+        # activities, insert activities" steps, which on PostgreSQL could
+        # leave both sets behind. (A no-op on SQLite, which serialises writes.)
+        Ticket.objects.select_for_update().filter(pk=instance.pk).exists()
         activities = validated_data.pop("activities", None)
         old_pdf = instance.pdf_attachment.name
         for field, value in validated_data.items():
@@ -262,13 +278,6 @@ class TicketWriteSerializer(serializers.ModelSerializer):
 
 
 # --- Detail (pre-fills the edit dialog) -----------------------------------------
-
-
-class UserRefSerializer(serializers.ModelSerializer):
-    class Meta:
-        model = User
-        fields = ["id", "username", "first_name", "last_name"]
-        read_only_fields = fields
 
 
 class TicketActivityReadSerializer(serializers.ModelSerializer):

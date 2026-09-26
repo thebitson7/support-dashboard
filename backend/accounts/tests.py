@@ -192,12 +192,12 @@ class UserSearchTests(AuthTestCase):
         self.assertEqual(self.usernames("syed huss"), ["syed"])
         self.assertEqual(self.usernames("NALEEFA"), ["naleefa"])
 
-    def test_results_are_capped_and_shaped_like_the_user_summary(self):
+    def test_results_are_capped_and_expose_no_role_or_zone(self):
         User = get_user_model()
         User.objects.bulk_create(User(username=f"bulk{n:02}") for n in range(30))
         body = self.client.get(self.URL, {"q": "bulk"}).json()
         self.assertEqual(len(body), 20)
-        self.assertEqual(set(body[0]), {"id", "username", "first_name", "last_name", "role", "timezone"})
+        self.assertEqual(set(body[0]), {"id", "username", "first_name", "last_name"})
 
     def test_requires_authentication(self):
         self.client.force_authenticate(None)

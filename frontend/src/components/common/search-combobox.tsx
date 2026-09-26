@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState, type Ref } from "react";
+import { useEffect, useMemo, useRef, useState, type Ref } from "react";
 import { Combobox } from "@base-ui/react/combobox";
 import { CheckIcon, ChevronDownIcon, LoaderCircle, Search, X } from "lucide-react";
 import { cn } from "cn";
@@ -42,12 +42,21 @@ function useRemoteOptions(
 ) {
   const [state, setState] = useState<{ key: string; options: ComboOption[]; failed: boolean }>();
   const key = `${open}:${query}`;
+  // The latest loader, read at fetch time. Keeping it out of the effect's
+  // dependencies means a caller passing an inline function (a new identity
+  // every render) can't trigger a fetch -> render -> fetch loop.
+  const loadRef = useRef(load);
+  useEffect(() => {
+    loadRef.current = load;
+  });
+  const remote = Boolean(load);
 
   useEffect(() => {
-    if (!load || !open) return;
+    const loader = loadRef.current;
+    if (!loader || !open) return;
     const controller = new AbortController();
     const timer = setTimeout(() => {
-      load(query.trim(), controller.signal).then(
+      loader(query.trim(), controller.signal).then(
         (options) => setState({ key, options, failed: false }),
         () => {
           if (!controller.signal.aborted) setState({ key, options: [], failed: true });
@@ -58,13 +67,13 @@ function useRemoteOptions(
       clearTimeout(timer);
       controller.abort();
     };
-  }, [load, query, open, key]);
+  }, [remote, query, open, key]);
 
   const settled = state?.key === key ? state : undefined;
   return {
     // While a new query is in flight, keep the previous results on screen.
     options: state?.options ?? [],
-    loading: Boolean(load && open && !settled),
+    loading: remote && open && !settled,
     failed: settled?.failed ?? false,
   };
 }

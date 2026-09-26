@@ -57,18 +57,17 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
-    "corsheaders",
     "core",
     "accounts",
     "working_hours",
     "tickets",
+    "lookups",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
-    "corsheaders.middleware.CorsMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -97,9 +96,9 @@ TEMPLATES = [
 WSGI_APPLICATION = "config.wsgi.application"
 
 
-# --- CORS: only the frontend origin(s) may call the API from a browser --------
-
-CORS_ALLOWED_ORIGINS = env_list("CORS_ALLOWED_ORIGINS", "http://localhost:3000")
+# No CORS: browsers never call this API directly. They talk to the Next.js
+# server (same origin), which calls Django server-to-server with a Bearer
+# token taken from its httpOnly cookie.
 
 
 # --- Django REST framework ---------------------------------------------------
@@ -186,11 +185,16 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 
 # --- Email -------------------------------------------------------------------
-# Development-only: messages are printed to the console. Configure a real
-# backend before sending email in production (`check --deploy` flags this).
+# The app sends no email yet. Local dev prints to the console; anywhere else
+# defaults to SMTP (configure EMAIL_HOST etc. when email is first needed).
 
 MAILERS = {
     "default": {
-        "BACKEND": "django.core.mail.backends.console.EmailBackend",
+        "BACKEND": os.environ.get(
+            "EMAIL_BACKEND",
+            "django.core.mail.backends.console.EmailBackend"
+            if DEBUG
+            else "django.core.mail.backends.smtp.EmailBackend",
+        ),
     },
 }

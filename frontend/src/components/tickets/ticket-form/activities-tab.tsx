@@ -78,10 +78,13 @@ function ActivityEditor({
   const set = <K extends keyof Draft>(f: K, value: Draft[K]) =>
     setDraft((d) => ({ ...d, [f]: value }));
   const minutes = minutesBetween(draft.start_at, draft.end_at);
-  const codeChoices = (codes.data ?? []).map((c) => ({
-    value: String(c.id),
-    label: `${c.code} · ${c.description}`,
-  }));
+  // Active codes, plus this activity's current one even if since deactivated.
+  const codeChoices = (codes.data ?? [])
+    .filter((c) => c.is_active || String(c.id) === draft.work_done_code)
+    .map((c) => ({
+      value: String(c.id),
+      label: `${c.code} · ${c.description}${c.is_active ? "" : " (inactive)"}`,
+    }));
 
   const save = () => {
     setAttempted(true);

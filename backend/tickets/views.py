@@ -8,7 +8,10 @@ from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
+from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+
+from accounts.permissions import IsAdminRoleOrReadOnly
 
 from .models import Customer, Site, Ticket, WorkDoneCode
 from .serializers import (
@@ -20,11 +23,15 @@ from .serializers import (
     WorkDoneCodeSerializer,
 )
 
-# Every ticket endpoint only needs authentication (the project default): any
+# Ticket endpoints only need authentication (the project default): any
 # signed-in staff member or admin may list, create and edit any ticket. A
 # deliberate, revisitable decision; role rules can be layered on later.
+# Reference data is the exception: the form's site/customer quick-add follows
+# the Lookups rule (anyone reads, only admins create).
 
 TYPEAHEAD_LIMIT = 20
+# Largest id the database integer column can hold.
+MAX_ID = 2**63 - 1
 
 
 class TicketPagination(PageNumberPagination):
@@ -77,7 +84,10 @@ def parse_instant(params, name: str):
     raw = params.get(name)
     if not raw:
         return None
-    value = parse_datetime(raw)
+    try:
+        value = parse_datetime(raw)
+    except ValueError:  # well-formed but impossible, e.g. 30 February
+        value = None
     if value is None or value.tzinfo is None:
         raise ValidationError({name: "Use an ISO 8601 date-time with a UTC offset."})
     return value
@@ -152,7 +162,8 @@ class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
 
         site = params.get("site")
         if site:
-            if not site.isascii() or not site.isdigit():
+            # Range-checked too: ids past the database integer size are a 400, not a 500.
+            if not (site.isascii() and site.isdigit()) or not 0 < int(site) <= MAX_ID:
                 raise ValidationError({"site": "Must be a site id."})
             qs = qs.filter(site_id=int(site))
 
@@ -232,22 +243,33 @@ class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):
 
 
 class SiteListCreateView(ListCreateAPIView):
-    """GET ?q= typeahead (name or OCN, max 20). POST {name, ocn}: quick-add from the ticket form."""
+    """
+    The ticket form's site field. GET ?q= typeahead over *active* sites (name
+    or OCN, max 20), for anyone signed in; POST {name, ocn} quick-adds one
+    without leaving the form, admin role only (as on the Sites lookup page).
+    Full management (country, address, deactivation) is /api/lookups/sites/.
+    """
 
+    permission_classes = [IsAuthenticated, IsAdminRoleOrReadOnly]
     serializer_class = SiteSerializer
     pagination_class = None
 
     def get_queryset(self):
         term = self.request.query_params.get("q", "").strip()
-        qs = Site.objects.all()
+        qs = Site.objects.filter(is_active=True)
         if term:
             qs = qs.filter(Q(name__icontains=term) | Q(ocn__icontains=term))
         return qs[:TYPEAHEAD_LIMIT]
 
 
-class CustomerListView(ListAPIView):
-    """GET ?q= typeahead by name (max 20)."""
+class CustomerListCreateView(ListCreateAPIView):
+    """
+    The ticket form's customer field. GET ?q= typeahead by name (max 20), for
+    anyone signed in; POST {name} quick-adds one, admin role only. Full
+    management is /api/lookups/customers/.
+    """
 
+    permission_classes = [IsAuthenticated, IsAdminRoleOrReadOnly]
     serializer_class = CustomerSerializer
     pagination_class = None
 
@@ -260,7 +282,11 @@ class CustomerListView(ListAPIView):
 
 
 class WorkDoneCodeListView(ListAPIView):
-    """Every work-done code (a short, fixed list)."""
+    """
+    Every work-done code, with `is_active`: the ticket form offers only active
+    codes for new choices but still needs inactive ones to label activities
+    that already use them.
+    """
 
     serializer_class = WorkDoneCodeSerializer
     pagination_class = None

@@ -344,6 +344,16 @@ class TicketListTests(TicketTestCase):
         self.assertEqual(self.client.get(TICKETS_URL, {"received_after": "yesterday"}).status_code, 400)
         self.assertEqual(self.client.get(TICKETS_URL, {"site": "abc"}).status_code, 400)
 
+    def test_malformed_filters_are_400_not_500(self):
+        for params in [
+            {"site": "9" * 30},
+            {"site": "0"},
+            {"received_after": "2026-02-30T00:00:00Z"},
+            {"received_before": "2026-13-01T00:00:00Z"},
+        ]:
+            with self.subTest(**params):
+                self.assertEqual(self.client.get(TICKETS_URL, params).status_code, 400)
+
     def test_search_covers_the_table_text(self):
         self.assertEqual(self.ids(search="makati"), [self.mid_open.pk])  # site name
         self.assertEqual(self.ids(search="07014"), [self.mid_open.pk])  # OCN
@@ -365,6 +375,7 @@ class TypeaheadTests(TicketTestCase):
         self.assertEqual(len(self.client.get("/api/tickets/sites/").json()), 2)
 
     def test_site_quick_add(self):
+        self.client.force_authenticate(User.objects.create_user("boss", password="pw", role=User.Role.ADMIN))
         response = self.client.post("/api/tickets/sites/", {"name": " New Lab ", "ocn": "ocn01-801-00"}, format="json")
         self.assertEqual(response.status_code, 201)
         self.assertEqual(response.json()["name"], "New Lab")
@@ -387,7 +398,7 @@ class TypeaheadTests(TicketTestCase):
     def test_work_done_codes_list(self):
         self.assertEqual(
             self.client.get("/api/tickets/work-done-codes/").json(),
-            [{"id": self.code.pk, "code": "RMD", "description": "Remote Diagnostic"}],
+            [{"id": self.code.pk, "code": "RMD", "description": "Remote Diagnostic", "is_active": True}],
         )
 
     def test_typeaheads_require_authentication(self):
@@ -395,6 +406,59 @@ class TypeaheadTests(TicketTestCase):
         for url in ["/api/tickets/sites/", "/api/tickets/customers/", "/api/tickets/work-done-codes/"]:
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url).status_code, 401)
+
+
+class QuickAddPermissionTests(TicketTestCase):
+    """
+    The ticket form's "+" quick-add follows the Lookups rule: anyone signed in
+    can search sites and customers, only admins can create them, including
+    through a direct API call.
+    """
+
+    def setUp(self):
+        super().setUp()  # signed in as syed, a staff user
+        self.admin = User.objects.create_user("boss", password="pw", role=User.Role.ADMIN)
+
+    def test_staff_cannot_quick_add_a_site_or_customer(self):
+        site = self.client.post("/api/tickets/sites/", {"name": "New Lab", "ocn": "OCN01"}, format="json")
+        customer = self.client.post("/api/tickets/customers/", {"name": "KPJ Healthcare"}, format="json")
+
+        self.assertEqual(site.status_code, 403)
+        self.assertEqual(customer.status_code, 403)
+        self.assertFalse(Site.objects.filter(name="New Lab").exists())
+        self.assertFalse(Customer.objects.filter(name="KPJ Healthcare").exists())
+
+    def test_staff_can_still_search_both(self):
+        self.assertEqual(self.client.get("/api/tickets/sites/", {"q": "tan"}).status_code, 200)
+        self.assertEqual(self.client.get("/api/tickets/customers/", {"q": "sing"}).status_code, 200)
+
+    def test_admin_quick_adds_a_site(self):
+        self.client.force_authenticate(self.admin)
+        response = self.client.post("/api/tickets/sites/", {"name": "New Lab", "ocn": "ocn01"}, format="json")
+
+        self.assertEqual(response.status_code, 201)
+        self.assertEqual(
+            response.json(), {"id": Site.objects.get(name="New Lab").pk, "name": "New Lab", "ocn": "OCN01"}
+        )
+
+    def test_admin_quick_adds_a_customer_and_duplicates_are_refused_case_insensitively(self):
+        self.client.force_authenticate(self.admin)
+        created = self.client.post("/api/tickets/customers/", {"name": "  KPJ Healthcare "}, format="json")
+        self.assertEqual(created.status_code, 201)
+        self.assertEqual(created.json()["name"], "KPJ Healthcare")
+
+        duplicate = self.client.post("/api/tickets/customers/", {"name": "singhealth"}, format="json")
+        self.assertEqual(duplicate.status_code, 400)
+        self.assertEqual(duplicate.json(), {"name": ["A customer with this name already exists."]})
+
+    def test_a_quick_added_customer_can_be_used_on_a_ticket_by_staff(self):
+        self.client.force_authenticate(self.admin)
+        customer_id = self.client.post("/api/tickets/customers/", {"name": "KPJ"}, format="json").json()["id"]
+        self.client.force_authenticate(self.syed)
+
+        response = self.client.post(TICKETS_URL, self.payload(customer=customer_id), format="json")
+        self.assertEqual(response.status_code, 201, response.content)
+        self.assertEqual(Ticket.objects.get().customer_id, customer_id)
 
 
 class TicketUpdateTests(TicketTestCase):
@@ -550,6 +614,51 @@ class TicketUpdateTests(TicketTestCase):
         response = self.client.put(self.url, {"notes": "only this"}, format="json")
         self.assertEqual(response.status_code, 400)
         self.assertIn("site", response.json())
+
+    # --- Bug-hunt scenarios (pre-production audit) ------------------------------
+
+    def test_remove_all_activities_then_re_add_one(self):
+        cleared = self.patch({"activities": [], "total_duration_hours": "7.00"})
+        self.assertEqual(cleared.json()["total_duration_hours"], 7.0)  # manual again
+
+        re_added = self.patch({"activities": [self.activity(0, 20)]})
+
+        self.assertEqual(re_added.status_code, 200, re_added.content)
+        # Back to server-computed: 20 min, not the 7.00 typed while empty.
+        self.assertEqual(re_added.json()["total_duration_hours"], 0.33)
+        self.assertEqual(TicketActivity.objects.filter(ticket=self.ticket).count(), 1)
+
+    def test_close_reopen_close_again_leaves_no_stale_values(self):
+        self.patch(self.close_fields())
+        self.patch({field: None for field in self.close_fields()})
+        later = iso(T0 + timedelta(days=5))
+        second = {
+            "resolution_verified_by": self.syed.pk,
+            "resolution_verified_on": later,
+            "cms_closed_by": self.syed.pk,
+            "cms_closed_on": later,
+            "service_closed_date": later,
+        }
+
+        body = self.patch(second).json()
+
+        self.assertEqual(body["status"], "closed")
+        self.assertEqual(body["cms_closed_by"]["username"], "syed")
+        self.assertEqual(body["resolution_verified_by"]["username"], "syed")
+        for field in ("resolution_verified_on", "cms_closed_on", "service_closed_date"):
+            self.assertTrue(body[field].startswith("2026-09-06"), (field, body[field]))
+
+    def test_stale_concurrent_edits_last_write_wins_without_duplicates(self):
+        # Two admins open the same ticket; each saves the full form from their
+        # (now stale) copy, one after the other.
+        first = self.patch({"notes": "A", "activities": [self.activity(0, 30)] * 3})
+        second = self.patch({"notes": "B", "activities": [self.activity(0, 60)]})
+
+        self.assertEqual((first.status_code, second.status_code), (200, 200))
+        self.ticket.refresh_from_db()
+        self.assertEqual(self.ticket.notes, "B")
+        self.assertEqual(TicketActivity.objects.filter(ticket=self.ticket).count(), 1)
+        self.assertEqual(self.ticket.total_duration_hours, Decimal("1.00"))
 
     def test_unknown_ticket_is_404(self):
         self.assertEqual(self.client.get(f"{TICKETS_URL}999999/").status_code, 404)

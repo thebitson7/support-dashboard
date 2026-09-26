@@ -1,12 +1,28 @@
 from django.contrib import admin
 
-from .models import Customer, Site, Ticket, TicketActivity, WorkDoneCode
+from .models import Country, Customer, Holiday, Site, Ticket, TicketActivity, WorkDoneCode
+
+
+@admin.register(Country)
+class CountryAdmin(admin.ModelAdmin):
+    list_display = ("name", "code")
+    search_fields = ("name", "code")
 
 
 @admin.register(Site)
 class SiteAdmin(admin.ModelAdmin):
-    list_display = ("name", "ocn")
-    search_fields = ("name", "ocn")
+    list_display = ("name", "ocn", "country", "is_active")
+    list_filter = ("is_active", "country")
+    search_fields = ("name", "ocn", "address")
+    list_select_related = ("country",)
+
+
+@admin.register(Holiday)
+class HolidayAdmin(admin.ModelAdmin):
+    list_display = ("name", "date", "country", "is_recurring_annually")
+    list_filter = ("is_recurring_annually", "country")
+    search_fields = ("name",)
+    list_select_related = ("country",)
 
 
 @admin.register(Customer)
@@ -17,7 +33,8 @@ class CustomerAdmin(admin.ModelAdmin):
 
 @admin.register(WorkDoneCode)
 class WorkDoneCodeAdmin(admin.ModelAdmin):
-    list_display = ("code", "description")
+    list_display = ("code", "description", "is_active")
+    list_filter = ("is_active",)
     search_fields = ("code", "description")
 
 

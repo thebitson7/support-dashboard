@@ -5,12 +5,15 @@ import { AnimatePresence, motion } from "framer-motion";
 import { FileText, LoaderCircle, Plus, Upload, X } from "lucide-react";
 
 import { ApiError, apiPost } from "@/lib/api";
+import { useAuth } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
 import {
+  customerOption,
   searchCustomers,
   searchSites,
   searchUsers,
   siteOption,
+  type ApiCustomer,
   type ApiSite,
 } from "@/lib/tickets-api";
 import { SearchCombobox, type ComboOption } from "@/components/common/search-combobox";
@@ -202,40 +205,62 @@ function PdfUpload({ form }: { form: FormBindings }) {
   );
 }
 
-/** "+" next to Site: create a site (name + OCN) without leaving the form. */
-function QuickAddSite({ onCreated }: { onCreated: (site: ComboOption) => void }) {
+type QuickAddField = { key: string; label: string; placeholder?: string; mono?: boolean };
+
+/**
+ * "+" next to a reference-data field: create the record without leaving the
+ * form. Admin only (the API refuses anyone else), so callers render it only
+ * for admins.
+ */
+function QuickAdd<T>({
+  noun,
+  endpoint,
+  fields,
+  missingMessage,
+  duplicateMessage,
+  toOption,
+  onCreated,
+}: {
+  /** "site", "customer": used in labels and messages. */
+  noun: string;
+  endpoint: string;
+  fields: QuickAddField[];
+  missingMessage: string;
+  duplicateMessage: string;
+  toOption: (created: T) => ComboOption;
+  onCreated: (option: ComboOption) => void;
+}) {
   const [open, setOpen] = useState(false);
-  const [name, setName] = useState("");
-  const [ocn, setOcn] = useState("");
+  const [values, setValues] = useState<Record<string, string>>({});
   const [error, setError] = useState<string>();
   const [saving, setSaving] = useState(false);
-  const ids = { name: useId(), ocn: useId(), error: useId() };
+  const baseId = useId();
+  const errorElementId = `${baseId}-error`;
 
   const reset = () => {
-    setName("");
-    setOcn("");
+    setValues({});
     setError(undefined);
   };
 
   const submit = async () => {
-    if (!name.trim() || !ocn.trim()) {
-      setError("Enter both the site name and its OCN.");
+    const body = Object.fromEntries(fields.map((f) => [f.key, (values[f.key] ?? "").trim()]));
+    if (fields.some((f) => !body[f.key])) {
+      setError(missingMessage);
       return;
     }
     setSaving(true);
     try {
-      const site = await apiPost<ApiSite>("/tickets/sites/", {
-        name: name.trim(),
-        ocn: ocn.trim(),
-      });
-      onCreated(siteOption(site));
+      const created = await apiPost<T>(endpoint, body);
+      onCreated(toOption(created));
       setOpen(false);
       reset();
     } catch (err) {
       setError(
         err instanceof ApiError && err.status === 400
-          ? "That site and OCN already exist, or a value is invalid."
-          : "Couldn't create the site. Try again.",
+          ? duplicateMessage
+          : err instanceof ApiError && err.status === 403
+            ? `Only admins can add ${noun}s.`
+            : `Couldn't create the ${noun}. Try again.`,
       );
     } finally {
       setSaving(false);
@@ -257,7 +282,7 @@ function QuickAddSite({ onCreated }: { onCreated: (site: ComboOption) => void })
             variant="outline"
             size="icon"
             className="size-9 shrink-0"
-            aria-label="Add a new site"
+            aria-label={`Add a new ${noun}`}
           />
         }
       >
@@ -265,7 +290,7 @@ function QuickAddSite({ onCreated }: { onCreated: (site: ComboOption) => void })
       </PopoverTrigger>
       <PopoverContent side="bottom" align="end" className="w-80 gap-3 p-4">
         <div className="grid gap-0.5">
-          <p className="text-sm font-semibold">Add a site</p>
+          <p className="text-sm font-semibold">Add a {noun}</p>
           <p className="text-caption">It&apos;s selected for this ticket once saved.</p>
         </div>
         <div
@@ -277,33 +302,24 @@ function QuickAddSite({ onCreated }: { onCreated: (site: ComboOption) => void })
             }
           }}
         >
-          <div className="grid gap-1.5">
-            <label htmlFor={ids.name} className="text-sm font-medium">
-              Site name
-            </label>
-            <Input
-              id={ids.name}
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              className="h-9"
-              autoFocus
-            />
-          </div>
-          <div className="grid gap-1.5">
-            <label htmlFor={ids.ocn} className="text-sm font-medium">
-              Site OCN
-            </label>
-            <Input
-              id={ids.ocn}
-              value={ocn}
-              onChange={(e) => setOcn(e.target.value)}
-              placeholder="OCN01234-801-00"
-              className="h-9 font-mono"
-              aria-describedby={error ? ids.error : undefined}
-            />
-          </div>
+          {fields.map((field, index) => (
+            <div key={field.key} className="grid gap-1.5">
+              <label htmlFor={`${baseId}-${field.key}`} className="text-sm font-medium">
+                {field.label}
+              </label>
+              <Input
+                id={`${baseId}-${field.key}`}
+                value={values[field.key] ?? ""}
+                onChange={(e) => setValues((v) => ({ ...v, [field.key]: e.target.value }))}
+                placeholder={field.placeholder}
+                className={field.mono ? "h-9 font-mono" : "h-9"}
+                aria-describedby={error ? errorElementId : undefined}
+                autoFocus={index === 0}
+              />
+            </div>
+          ))}
           {error && (
-            <p id={ids.error} role="alert" className="text-xs font-medium text-destructive">
+            <p id={errorElementId} role="alert" className="text-xs font-medium text-destructive">
               {error}
             </p>
           )}
@@ -315,7 +331,7 @@ function QuickAddSite({ onCreated }: { onCreated: (site: ComboOption) => void })
               {saving && (
                 <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
               )}
-              Save site
+              Save {noun}
             </Button>
           </div>
         </div>
@@ -334,6 +350,14 @@ export function TicketTab({
   activitiesTotalHours: number;
 }) {
   const { values, set, touch, error } = form;
+  const { user } = useAuth();
+  // Reference data is admin-managed (the API enforces it); staff pick from
+  // what exists, and an empty field tells them who to ask.
+  const canAddReference = user?.role === "admin";
+  const staffHint = (noun: "site" | "customer", value: ComboOption | null) =>
+    !canAddReference && !value ? `Can't find it? Ask an admin to add a new ${noun}.` : undefined;
+  const referenceDescribedBy = (field: "site" | "customer", value: ComboOption | null) =>
+    error(field) ? errorId(field) : staffHint(field, value) ? hintId(field) : undefined;
   const text = (field: "cms_next_ticket_no") => ({
     id: fieldId(field),
     value: values[field],
@@ -388,37 +412,78 @@ export function TicketTab({
       </Section>
 
       <Section title="Site & assignment">
-        <Field name="site" label="Site" required error={error("site")}>
+        <Field
+          name="site"
+          label="Site"
+          required
+          error={error("site")}
+          hint={staffHint("site", values.site)}
+        >
           <div className="flex gap-2">
             <SearchCombobox
               id={fieldId("site")}
               aria-labelledby={`${fieldId("site")}-label`}
-              aria-describedby={error("site") ? errorId("site") : undefined}
+              aria-describedby={referenceDescribedBy("site", values.site)}
               value={values.site}
               onChange={(o) => set("site", o)}
               onBlur={() => touch("site")}
               loadOptions={searchSites}
               placeholder="Search sites or OCNs…"
-              emptyText="No sites match. Use + to add one."
+              emptyText={canAddReference ? "No sites match. Use + to add one." : "No sites match."}
               invalid={Boolean(error("site"))}
               className="min-w-0 flex-1"
             />
-            <QuickAddSite onCreated={(site) => set("site", site)} />
+            {canAddReference && (
+              <QuickAdd<ApiSite>
+                noun="site"
+                endpoint="/tickets/sites/"
+                fields={[
+                  { key: "name", label: "Site name" },
+                  { key: "ocn", label: "Site OCN", placeholder: "OCN01234-801-00", mono: true },
+                ]}
+                missingMessage="Enter both the site name and its OCN."
+                duplicateMessage="That site and OCN already exist, or a value is invalid."
+                toOption={siteOption}
+                onCreated={(site) => set("site", site)}
+              />
+            )}
           </div>
         </Field>
-        <Field name="customer" label="Customer" required error={error("customer")}>
-          <SearchCombobox
-            id={fieldId("customer")}
-            aria-labelledby={`${fieldId("customer")}-label`}
-            aria-describedby={error("customer") ? errorId("customer") : undefined}
-            value={values.customer}
-            onChange={(o) => set("customer", o)}
-            onBlur={() => touch("customer")}
-            loadOptions={searchCustomers}
-            placeholder="Search customers…"
-            emptyText="No customers match."
-            invalid={Boolean(error("customer"))}
-          />
+        <Field
+          name="customer"
+          label="Customer"
+          required
+          error={error("customer")}
+          hint={staffHint("customer", values.customer)}
+        >
+          <div className="flex gap-2">
+            <SearchCombobox
+              id={fieldId("customer")}
+              aria-labelledby={`${fieldId("customer")}-label`}
+              aria-describedby={referenceDescribedBy("customer", values.customer)}
+              value={values.customer}
+              onChange={(o) => set("customer", o)}
+              onBlur={() => touch("customer")}
+              loadOptions={searchCustomers}
+              placeholder="Search customers…"
+              emptyText={
+                canAddReference ? "No customers match. Use + to add one." : "No customers match."
+              }
+              invalid={Boolean(error("customer"))}
+              className="min-w-0 flex-1"
+            />
+            {canAddReference && (
+              <QuickAdd<ApiCustomer>
+                noun="customer"
+                endpoint="/tickets/customers/"
+                fields={[{ key: "name", label: "Customer name" }]}
+                missingMessage="Enter the customer's name."
+                duplicateMessage="That customer already exists, or the name is invalid."
+                toOption={customerOption}
+                onCreated={(customer) => set("customer", customer)}
+              />
+            )}
+          </div>
         </Field>
         <UserField form={form} field="assigned_to" label="Ticket Assigned To" required />
         <Field name="ticket_type" label="Ticket Type" required error={error("ticket_type")}>

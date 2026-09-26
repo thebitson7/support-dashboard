@@ -14,6 +14,7 @@ urlpatterns = [
     path("api/accounts/users/", UserSearchView.as_view(), name="user-search"),
     path("api/working-hours/", include("working_hours.urls")),
     path("api/tickets/", include("tickets.urls")),
+    path("api/lookups/", include("lookups.urls")),
 ]
 
 if settings.DEBUG:

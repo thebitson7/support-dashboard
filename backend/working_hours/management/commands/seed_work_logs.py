@@ -1,14 +1,14 @@
 """Regenerate ~90 days of realistic work-log entries for every staff user (local dev only)."""
 
 import random
-from datetime import timedelta
+from datetime import time, timedelta
 from decimal import Decimal
 
-from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from core.management import DevOnlyCommand
 from accounts.models import User
-from working_hours.models import WorkLogEntry
+from working_hours.models import WorkLogEntry, hours_between
 from working_hours.periods import local_today
 
 AMS = WorkLogEntry.Category.AMS
@@ -46,7 +46,34 @@ def split_day(rng: random.Random, total: Decimal) -> list[tuple[str, Decimal]]:
     return [e for e in entries if e[1] > 0]
 
 
-class Command(BaseCommand):
+def timed_entries(rng: random.Random, user, day, parts) -> list[WorkLogEntry]:
+    """
+    Lays a day's (category, hours) parts out back to back from a start
+    between 08:00 and 09:30, in random order, as start/end times.
+    """
+    parts = list(parts)
+    rng.shuffle(parts)
+    cursor = 8 * 60 + 15 * rng.randint(0, 6)  # minutes since midnight
+    entries = []
+    for category, hours in parts:
+        end = cursor + int(hours * 60)
+        start_time, end_time = time(*divmod(cursor, 60)), time(*divmod(end, 60))
+        entries.append(
+            WorkLogEntry(
+                user=user,
+                date=day,
+                start_time=start_time,
+                end_time=end_time,
+                category=category,
+                # bulk_create skips save(), which normally derives this.
+                hours=hours_between(start_time, end_time),
+            )
+        )
+        cursor = end
+    return entries
+
+
+class Command(DevOnlyCommand):
     help = "Clear and regenerate WorkLogEntry rows for all staff users."
 
     def add_arguments(self, parser):
@@ -73,10 +100,7 @@ class Command(BaseCommand):
                 if (weekend and rng.random() > 0.05) or (not weekend and rng.random() < 0.08):
                     continue
                 total = quarter(day_total(rng))
-                rows += [
-                    WorkLogEntry(user=user, date=day, category=category, hours=hours)
-                    for category, hours in split_day(rng, total)
-                ]
+                rows += timed_entries(rng, user, day, split_day(rng, total))
 
         WorkLogEntry.objects.bulk_create(rows)
         self.stdout.write(

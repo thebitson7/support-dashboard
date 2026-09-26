@@ -16,17 +16,23 @@ Next.js (App Router) + TypeScript + Tailwind CSS v4 + shadcn/ui. See the root
 
 ## Environment
 
-Copy `.env.local.example` to `.env.local` and set `NEXT_PUBLIC_API_URL`
-(defaults to `http://localhost:8000/api`).
+Copy `.env.local.example` to `.env.local` and set `DJANGO_API_URL` (defaults to
+`http://127.0.0.1:8000/api`). It is server-side only: the browser only ever calls
+this app's own `/api/*` routes, which forward to Django with the session cookie
+turned into a Bearer token (see `src/lib/server/session.ts`).
 
 ## Layout
 
-- `src/app/` — routes (Home dashboard, AMS Tickets, placeholder pages), `error.tsx` boundaries
+- `src/app/` — routes (Home dashboard, AMS Tickets, Lookups, login, placeholder pages), `error.tsx` boundaries
+- `src/app/api/` — auth route handlers (login/refresh/logout) and the gateway to Django
+- `src/proxy.ts` — server-side route guard (signed-out visitors go to `/login`)
 - `src/components/layout/` — sidebar and theme toggle
 - `src/components/dashboard/` — Home dashboard sections
-- `src/components/tickets/` — AMS Tickets table (TanStack Table v9)
+- `src/components/tickets/` — AMS Tickets table (TanStack Table v9) and the New/Edit Ticket dialog
+- `src/components/lookups/` — the shared table + dialog behind the five Lookups pages
+- `src/components/common/` — shared form pieces (search combobox, date-time picker, fields)
 - `src/components/ui/` — shadcn/ui primitives
-- `src/lib/` — API client, mock data generators, motion helpers
+- `src/lib/` — API client, auth context, date helpers, motion helpers, Home mock data
 - `src/config/nav.ts` — sidebar navigation (single source of truth)
 
 Data is currently mocked (`src/lib/mock-data.ts`, `src/lib/mock-tickets.ts`);

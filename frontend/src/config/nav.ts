@@ -1,5 +1,6 @@
 import {
   BarChart3,
+  Building2,
   CalendarDays,
   ClipboardCheck,
   Clock,
@@ -33,6 +34,7 @@ export const navItems: NavItem[] = [
         icon: Clock,
       },
       { label: "Sites", href: "/lookups/sites", icon: MapPin },
+      { label: "Customers", href: "/lookups/customers", icon: Building2 },
       { label: "Countries", href: "/lookups/countries", icon: Globe },
       {
         label: "Work Done Codes",

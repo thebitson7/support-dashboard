@@ -35,7 +35,13 @@ export type TicketListResponse = {
 export type ApiSite = { id: number; name: string; ocn: string };
 export type ApiUserRef = { id: number; username: string; first_name: string; last_name: string };
 export type ApiCustomer = { id: number; name: string };
-export type ApiWorkDoneCode = { id: number; code: string; description: string };
+export type ApiWorkDoneCode = {
+  id: number;
+  code: string;
+  description: string;
+  /** Inactive codes label existing activities but can't be newly chosen. */
+  is_active: boolean;
+};
 
 export type ApiTicketActivity = {
   id: number;
@@ -160,7 +166,11 @@ export async function searchCustomers(query: string, signal: AbortSignal): Promi
   const customers = await apiGet<ApiCustomer[]>(withQuery("/tickets/customers/", query), {
     signal,
   });
-  return customers.map((c) => ({ value: String(c.id), label: c.name }));
+  return customers.map(customerOption);
+}
+
+export function customerOption(customer: ApiCustomer): ComboOption {
+  return { value: String(customer.id), label: customer.name };
 }
 
 export function userOption(user: ApiUserRef | AuthUser): ComboOption {
@@ -168,6 +178,6 @@ export function userOption(user: ApiUserRef | AuthUser): ComboOption {
 }
 
 export async function searchUsers(query: string, signal: AbortSignal): Promise<ComboOption[]> {
-  const users = await apiGet<AuthUser[]>(withQuery("/accounts/users/", query), { signal });
+  const users = await apiGet<ApiUserRef[]>(withQuery("/accounts/users/", query), { signal });
   return users.map(userOption);
 }

@@ -5,7 +5,7 @@ Support Ticket & Work Stats Dashboard — internal redesign.
 ## Tech stack
 
 - **Frontend**: Next.js (App Router) + TypeScript + Tailwind CSS + shadcn/ui, `recharts`, `@tanstack/react-table`
-- **Backend**: Django + Django REST Framework, `django-cors-headers`, `djangorestframework-simplejwt`
+- **Backend**: Django + Django REST Framework, `djangorestframework-simplejwt`
 
 ## Project structure
 

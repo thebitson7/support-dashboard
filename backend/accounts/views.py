@@ -7,7 +7,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.views import TokenObtainPairView
 
 from .models import User
-from .serializers import UserSummarySerializer
+from .serializers import UserRefSerializer, UserSummarySerializer
 from .throttling import LoginRateThrottle
 
 USER_SEARCH_LIMIT = 20
@@ -32,10 +32,11 @@ class MeView(APIView):
 class UserSearchView(ListAPIView):
     """
     GET ?q= : active users whose username or name matches (max 20). Open to
-    any signed-in user; it powers the "Search users..." fields app-wide.
+    any signed-in user; it powers the "Search users..." fields app-wide, so it
+    returns only what's needed to pick someone (UserRefSerializer).
     """
 
-    serializer_class = UserSummarySerializer
+    serializer_class = UserRefSerializer
     pagination_class = None
 
     def get_queryset(self):

@@ -1,21 +1,13 @@
 "use client";
 
-import {
-  ChevronUp,
-  Inbox,
-  Pencil,
-  Plus,
-  RotateCw,
-  SearchX,
-  TriangleAlert,
-  WifiOff,
-} from "lucide-react";
-import type { ReactNode } from "react";
+import { Inbox, Pencil, Plus, SearchX } from "lucide-react";
 import { motion, useReducedMotion } from "framer-motion";
 import { cn } from "cn";
 
 import type { ApiError } from "@/lib/api";
 import { EASE } from "@/lib/motion";
+import { SortIcon } from "@/components/common/sort-icon";
+import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { TicketsTable } from "@/components/tickets/tickets-table-config";
@@ -58,52 +50,6 @@ const ACTIONS_CELL = "w-12 border-b px-2 text-center";
 const alignClass = (align?: "right" | "center") =>
   align === "right" ? "text-right" : align === "center" ? "text-center" : "text-left";
 
-/** A chevron that flips (asc = up, desc = down) with a quick eased rotation. */
-function SortIcon({ direction }: { direction: false | "asc" | "desc" }) {
-  const reduce = useReducedMotion();
-  return (
-    <motion.span
-      aria-hidden
-      initial={false}
-      animate={{ rotate: direction === "desc" ? 180 : 0, opacity: direction ? 1 : 0.35 }}
-      transition={{ duration: reduce ? 0 : 0.18, ease: EASE }}
-      className="flex"
-    >
-      <ChevronUp className="size-4" strokeWidth={2} />
-    </motion.span>
-  );
-}
-
-function Placeholder({
-  icon: Icon,
-  title,
-  children,
-  action,
-  alert,
-}: {
-  icon: typeof SearchX;
-  title: string;
-  children: ReactNode;
-  action: ReactNode;
-  alert?: boolean;
-}) {
-  return (
-    <div
-      role={alert ? "alert" : undefined}
-      className="flex min-h-72 flex-1 flex-col items-center justify-center gap-3 px-6 py-16 text-center"
-    >
-      <span className="grid size-14 place-items-center rounded-full bg-muted text-muted-foreground">
-        <Icon className="size-7" strokeWidth={2} aria-hidden />
-      </span>
-      <div className="grid gap-1">
-        <p className="text-title">{title}</p>
-        <p className="text-label">{children}</p>
-      </div>
-      {action}
-    </div>
-  );
-}
-
 /** What the body shows instead of rows. */
 export type TicketsEmptyKind = "no-tickets" | "no-matches";
 
@@ -141,26 +87,11 @@ export function TicketsTableView({
   const rows = table.getRowModel().rows;
 
   if (error) {
-    const offline = error.status === 0 || error.status === 502;
-    return (
-      <Placeholder
-        alert
-        icon={offline ? WifiOff : TriangleAlert}
-        title={offline ? "Can't reach the server" : "Couldn't load tickets"}
-        action={
-          <Button variant="outline" onClick={onRetry}>
-            <RotateCw aria-hidden />
-            Try again
-          </Button>
-        }
-      >
-        {offline ? "Check your connection, then try again." : error.message}
-      </Placeholder>
-    );
+    return <LoadErrorPlaceholder error={error} what="tickets" onRetry={onRetry} />;
   }
   if (!loading && empty === "no-tickets") {
     return (
-      <Placeholder
+      <StatePlaceholder
         icon={Inbox}
         title="No tickets yet"
         action={
@@ -171,12 +102,12 @@ export function TicketsTableView({
         }
       >
         Tickets you create will show up here.
-      </Placeholder>
+      </StatePlaceholder>
     );
   }
   if (!loading && empty === "no-matches") {
     return (
-      <Placeholder
+      <StatePlaceholder
         icon={SearchX}
         title="No tickets match your search"
         action={
@@ -186,7 +117,7 @@ export function TicketsTableView({
         }
       >
         Try a different keyword, or clear your filters.
-      </Placeholder>
+      </StatePlaceholder>
     );
   }
 

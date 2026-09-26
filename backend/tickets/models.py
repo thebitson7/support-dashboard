@@ -1,15 +1,48 @@
 from django.conf import settings
-from django.core.validators import FileExtensionValidator
+from django.core.validators import FileExtensionValidator, RegexValidator
 from django.db import models
 
-# --- Minimal reference data ----------------------------------------------------
-# Placeholders with just enough fields for ticket creation; their own Lookups
-# pages will grow them later.
+# --- Reference data (managed on the Lookups pages) ------------------------------
+# These live in the tickets app because tickets reference them; the API for
+# managing them is under /api/lookups/ (see the `lookups` app).
+
+
+class Country(models.Model):
+    name = models.CharField(max_length=100, unique=True)
+    code = models.CharField(
+        "ISO code",
+        max_length=2,
+        unique=True,
+        validators=[
+            RegexValidator(r"^[A-Z]{2}$", "Use the 2-letter ISO 3166-1 code, e.g. MY.")
+        ],
+        help_text="ISO 3166-1 alpha-2, e.g. MY, SG, PH (stored uppercase).",
+    )
+
+    class Meta:
+        ordering = ["name"]
+        verbose_name_plural = "countries"
+
+    def __str__(self):
+        return f"{self.name} ({self.code})"
+
+    def save(self, *args, **kwargs):
+        # Normalise however it arrived (admin, shell, API): " my " -> "MY".
+        self.code = (self.code or "").strip().upper()
+        self.name = (self.name or "").strip()
+        super().save(*args, **kwargs)
 
 
 class Site(models.Model):
     name = models.CharField(max_length=200)
     ocn = models.CharField("OCN", max_length=50)
+    country = models.ForeignKey(
+        Country, on_delete=models.PROTECT, null=True, blank=True, related_name="sites"
+    )
+    address = models.CharField(max_length=300, blank=True)
+    # Inactive sites are hidden from the ticket form's typeahead but stay on
+    # the Sites lookup page (and on the tickets that already reference them).
+    is_active = models.BooleanField("active", default=True)
 
     class Meta:
         ordering = ["name", "ocn"]
@@ -33,12 +66,53 @@ class Customer(models.Model):
 class WorkDoneCode(models.Model):
     code = models.CharField(max_length=20, unique=True)
     description = models.CharField(max_length=200)
+    # Inactive codes can't be picked for new activities; existing ones keep them.
+    is_active = models.BooleanField("active", default=True)
 
     class Meta:
         ordering = ["code"]
 
     def __str__(self):
         return f"{self.code} · {self.description}"
+
+
+class Holiday(models.Model):
+    """
+    A public or company holiday.
+
+    Two conventions:
+
+    * `country` null means the holiday applies globally (company-wide, every
+      country); otherwise it applies to that country only.
+    * `is_recurring_annually=True` means it falls on the same month and day
+      every year (New Year's Day, 25 December...): only the month/day of
+      `date` matter and its year is ignored. With False, `date` is one exact
+      calendar date (holidays that move each year, e.g. Eid or Lunar New
+      Year, are entered once per year).
+    """
+
+    name = models.CharField(max_length=150)
+    date = models.DateField()
+    country = models.ForeignKey(
+        Country,
+        on_delete=models.PROTECT,
+        null=True,
+        blank=True,
+        related_name="holidays",
+        help_text="Leave empty for a global (company-wide) holiday.",
+    )
+    is_recurring_annually = models.BooleanField(
+        "recurs annually",
+        default=True,
+        help_text="Same month and day every year; the year of the date is then ignored.",
+    )
+
+    class Meta:
+        ordering = ["date", "name"]
+
+    def __str__(self):
+        when = self.date.strftime("%d %b") if self.is_recurring_annually else self.date.isoformat()
+        return f"{self.name} ({when}, {self.country.code if self.country else 'global'})"
 
 
 # --- Tickets -------------------------------------------------------------------

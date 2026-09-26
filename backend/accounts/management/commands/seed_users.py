@@ -1,14 +1,14 @@
 """Create (or reset) the local development users. Never run this against real data."""
 
-from django.core.management.base import BaseCommand
 from django.db import transaction
 
+from core.management import DevOnlyCommand
 from accounts.models import User
 
 DEV_PASSWORD = "password123"
 
-# Staff names match the pool used by the frontend's mock ticket data. The time
-# zones differ on purpose so "today" boundaries can be seen to differ.
+# Staff names are the support team's. The time zones differ on purpose so
+# "today" boundaries can be seen to differ.
 DEV_USERS = [
     {"username": "admin", "first_name": "Admin", "last_name": "User", "role": User.Role.ADMIN,
      "is_staff": True, "is_superuser": True},
@@ -21,7 +21,7 @@ DEV_USERS = [
 ]
 
 
-class Command(BaseCommand):
+class Command(DevOnlyCommand):
     help = f"Create/update local dev users (all with password '{DEV_PASSWORD}')."
 
     @transaction.atomic
