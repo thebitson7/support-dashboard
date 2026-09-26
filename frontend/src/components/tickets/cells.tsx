@@ -15,11 +15,15 @@ function formatDateTime(ms: number) {
   return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
 }
 
-/** Empty values read as a quiet dash, not a blank gap. */
+/**
+ * Empty values read as a quiet dash, not a blank gap. Screen readers get
+ * "No value" as text: an aria-label on a plain span is ignored by many.
+ */
 export function Dash() {
   return (
-    <span className="text-muted-foreground/60" aria-label="No value">
-      —
+    <span className="text-muted-foreground/60">
+      <span aria-hidden>—</span>
+      <span className="sr-only">No value</span>
     </span>
   );
 }

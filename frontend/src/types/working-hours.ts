@@ -11,6 +11,12 @@ export type ApiPeriod = {
   /** ISO dates, both inclusive. */
   start_date: string;
   end_date: string;
+  /** Exact minutes, summed from the entries' times: display these. */
+  total_minutes: number;
+  ams_minutes: number;
+  non_ams_minutes: number;
+  goal_minutes: number;
+  /** The same figures in hours (2 decimals), for reading. */
   total_hours: number;
   goal_hours: number;
   ams_hours: number;

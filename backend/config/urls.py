@@ -15,6 +15,7 @@ urlpatterns = [
     path("api/working-hours/", include("working_hours.urls")),
     path("api/tickets/", include("tickets.urls")),
     path("api/lookups/", include("lookups.urls")),
+    path("api/reports/", include("reports.urls")),
 ]
 
 if settings.DEBUG:

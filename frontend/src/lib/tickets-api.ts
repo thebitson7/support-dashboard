@@ -133,10 +133,26 @@ export type TicketListQuery = {
 };
 
 export function ticketListPath(q: TicketListQuery): string {
-  const params = new URLSearchParams({
-    page: String(q.pageIndex + 1),
-    page_size: String(q.pageSize),
-  });
+  const params = viewParams(q);
+  params.set("page", String(q.pageIndex + 1));
+  params.set("page_size", String(q.pageSize));
+  return `/tickets/?${params}`;
+}
+
+/**
+ * The CSV of the same view: same sort / search / filters, every matching row
+ * (no paging). Its times are written in this browser's zone (`tz`), the one
+ * the table renders in, so the file and the screen show the same clock times.
+ */
+export function ticketExportPath(q: Omit<TicketListQuery, "pageIndex" | "pageSize">): string {
+  const params = viewParams(q);
+  const zone = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  if (zone) params.set("tz", zone);
+  return `/tickets/export/?${params}`;
+}
+
+function viewParams(q: Omit<TicketListQuery, "pageIndex" | "pageSize">): URLSearchParams {
+  const params = new URLSearchParams();
   const orderingKey = q.sort && ORDERING_KEY[q.sort.id];
   if (orderingKey) params.set("ordering", `${q.sort?.desc ? "-" : ""}${orderingKey}`);
   if (q.search.trim()) params.set("search", q.search.trim());
@@ -145,7 +161,7 @@ export function ticketListPath(q: TicketListQuery): string {
   const [from, to] = q.receivedRange ?? [-Infinity, Infinity];
   if (Number.isFinite(from)) params.set("received_after", new Date(from).toISOString());
   if (Number.isFinite(to)) params.set("received_before", new Date(to).toISOString());
-  return `/tickets/?${params}`;
+  return params;
 }
 
 // --- Typeahead loaders (for SearchCombobox) -------------------------------------

@@ -79,9 +79,10 @@ export function TicketsTableView({
   error: ApiError | undefined;
   onClear: () => void;
   onRetry: () => void;
-  onCreate: () => void;
-  /** Opens the edit dialog for a ticket (by row id). */
-  onEdit: (id: string) => void;
+  /** Offered on the "no tickets yet" state; omit for a read-only table. */
+  onCreate?: () => void;
+  /** Opens the edit dialog for a ticket (by row id); omit for a read-only table (no actions column). */
+  onEdit?: (id: string) => void;
 }) {
   const reduce = useReducedMotion();
   const rows = table.getRowModel().rows;
@@ -95,13 +96,15 @@ export function TicketsTableView({
         icon={Inbox}
         title="No tickets yet"
         action={
-          <Button onClick={onCreate}>
-            <Plus aria-hidden strokeWidth={2} />
-            Create your first ticket
-          </Button>
+          onCreate && (
+            <Button onClick={onCreate}>
+              <Plus aria-hidden strokeWidth={2} />
+              Create your first ticket
+            </Button>
+          )
         }
       >
-        Tickets you create will show up here.
+        {onCreate ? "Tickets you create will show up here." : "No tickets have been logged yet."}
       </StatePlaceholder>
     );
   }
@@ -138,12 +141,14 @@ export function TicketsTableView({
         <thead>
           {table.getHeaderGroups().map((group) => (
             <tr key={group.id}>
-              <th
-                scope="col"
-                className={cn(ACTIONS_CELL, "sticky top-0 z-10 border-border bg-muted py-2")}
-              >
-                <span className="sr-only">Actions</span>
-              </th>
+              {onEdit && (
+                <th
+                  scope="col"
+                  className={cn(ACTIONS_CELL, "sticky top-0 z-10 border-border bg-muted py-2")}
+                >
+                  <span className="sr-only">Actions</span>
+                </th>
+              )}
               {group.headers.map((header) => {
                 const style = COLUMN_STYLE[header.column.id];
                 const canSort = header.column.getCanSort();
@@ -187,9 +192,11 @@ export function TicketsTableView({
           <tbody>
             {Array.from({ length: 12 }).map((_, index) => (
               <tr key={index}>
-                <td className={cn(ACTIONS_CELL, "border-border/60 py-3")}>
-                  <Skeleton className="mx-auto size-5 rounded-md motion-reduce:animate-none" />
-                </td>
+                {onEdit && (
+                  <td className={cn(ACTIONS_CELL, "border-border/60 py-3")}>
+                    <Skeleton className="mx-auto size-5 rounded-md motion-reduce:animate-none" />
+                  </td>
+                )}
                 {leafColumns.map((column) => (
                   <td
                     key={column.id}
@@ -237,25 +244,27 @@ export function TicketsTableView({
                   // Capped so even a 200-row page finishes appearing in ~0.5s.
                   style={reveal ? { animationDelay: `${Math.min(index * 10, 240)}ms` } : undefined}
                 >
-                  <td
-                    className={cn(
-                      ACTIONS_CELL,
-                      "border-border/60 py-1",
-                      // Open rows get a 4px left-edge accent bar.
-                      open && "shadow-[inset_4px_0_0_var(--status-open)]",
-                    )}
-                  >
-                    <Button
-                      variant="ghost"
-                      size="icon-sm"
-                      aria-label={`Edit ticket ${row.original.cmsTicketNo}`}
-                      onClick={() => onEdit(row.id)}
-                      className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                  {onEdit && (
+                    <td
+                      className={cn(
+                        ACTIONS_CELL,
+                        "border-border/60 py-1",
+                        // Open rows get a 4px left-edge accent bar.
+                        open && "shadow-[inset_4px_0_0_var(--status-open)]",
+                      )}
                     >
-                      <Pencil aria-hidden />
-                    </Button>
-                  </td>
-                  {row.getAllCells().map((cell) => {
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label={`Edit ticket ${row.original.cmsTicketNo}`}
+                        onClick={() => onEdit(row.id)}
+                        className="text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+                      >
+                        <Pencil aria-hidden />
+                      </Button>
+                    </td>
+                  )}
+                  {row.getAllCells().map((cell, cellIndex) => {
                     const style = COLUMN_STYLE[cell.column.id];
                     return (
                       <td
@@ -263,6 +272,12 @@ export function TicketsTableView({
                         className={cn(
                           "border-b border-border/60 px-4 py-2.5 whitespace-nowrap",
                           alignClass(style?.align),
+                          // Without the actions column, the open-row accent
+                          // bar moves to the first data cell.
+                          !onEdit &&
+                            cellIndex === 0 &&
+                            open &&
+                            "shadow-[inset_4px_0_0_var(--status-open)]",
                         )}
                       >
                         <table.FlexRender cell={cell} />

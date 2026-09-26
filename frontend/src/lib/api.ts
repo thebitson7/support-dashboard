@@ -11,6 +11,8 @@ const API_URL = "/api";
 
 /** A request that takes longer than this is aborted and reported as an error. */
 const REQUEST_TIMEOUT_MS = 10_000;
+/** File exports are built on demand and can take longer than a normal request. */
+const DOWNLOAD_TIMEOUT_MS = 60_000;
 
 /** Endpoints that must never trigger a refresh-and-retry themselves. */
 const SESSION_PATHS = new Set(["/auth/login", "/auth/refresh", "/auth/logout"]);
@@ -56,9 +58,13 @@ function normalize(path: string): string {
 }
 
 /** One HTTP round trip with the timeout applied; network failures become ApiError(0). */
-async function send(path: string, init: RequestInit): Promise<Response> {
+async function send(
+  path: string,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   try {
     return await fetch(`${API_URL}${normalize(path)}`, {
       ...init,
@@ -76,7 +82,7 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     throw new ApiError(
       0,
       timedOut
-        ? `Request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
+        ? `Request timed out after ${timeoutMs / 1000}s`
         : error instanceof Error
           ? error.message
           : "Network error",
@@ -127,16 +133,25 @@ function errorMessage(body: string, data: unknown, fallback: string): string {
   return body || fallback;
 }
 
-async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+/**
+ * One request with the session handling every call shares: an expired access
+ * cookie is refreshed once and the request retried; any non-2xx then becomes
+ * an ApiError. Returns the (successful) response unread.
+ */
+async function request(
+  path: string,
+  init: RequestInit,
+  timeoutMs = REQUEST_TIMEOUT_MS,
+): Promise<Response> {
   const sentAt = generation;
-  let res = await send(path, init);
+  let res = await send(path, init, timeoutMs);
 
   // Access cookie expired: refresh once (shared) and retry. If the refresh
   // itself is refused the session is over.
   if (res.status === 401 && !SESSION_PATHS.has(normalize(path))) {
     const renewed = sentAt !== generation || (await refreshSession());
     if (renewed) {
-      res = await send(path, init);
+      res = await send(path, init, timeoutMs);
     } else {
       expiredListeners.forEach((listener) => listener());
     }
@@ -151,6 +166,11 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
       data,
     });
   }
+  return res;
+}
+
+async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const res = await request(path, init);
 
   // No body to parse (204 No Content / empty 2xx). Callers of such endpoints
   // request `apiFetch<void>`, so `undefined` is the honest value.
@@ -186,4 +206,26 @@ export function apiPatch<T>(path: string, body?: unknown): Promise<T> {
 
 export function apiDelete(path: string): Promise<void> {
   return apiFetch<void>(path, { method: "DELETE" });
+}
+
+/**
+ * GETs a file (e.g. a CSV export) and hands it to the browser as a download,
+ * named by the server's Content-Disposition, else `fallbackName`. It goes
+ * through the same session refresh as every other call, which a plain link
+ * couldn't: with an expired access cookie a link would download the 401
+ * error instead of the file.
+ */
+export async function apiDownload(path: string, fallbackName: string): Promise<void> {
+  const res = await request(path, { method: "GET" }, DOWNLOAD_TIMEOUT_MS);
+  const blob = await res.blob();
+  const named = /filename="?([^";]+)"?/i.exec(res.headers.get("content-disposition") ?? "");
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = named?.[1] ?? fallbackName;
+  document.body.append(link);
+  link.click();
+  link.remove();
+  // Revoked on the next tick, once the click has started the download.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
 }

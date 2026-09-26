@@ -1,4 +1,11 @@
-"""Regenerate ~90 days of realistic work-log entries for every staff user (local dev only)."""
+"""
+Regenerate ~90 days of realistic *manual* work-log entries for every staff user
+(local dev only).
+
+Manual entries are Non-AMS only: AMS time exists only as auto entries mirrored
+from ticket activities (working_hours.sync), so this command never makes AMS
+rows. To see AMS hours in dev, add ticket activities with a resolver.
+"""
 
 import random
 from datetime import time, timedelta
@@ -11,7 +18,6 @@ from accounts.models import User
 from working_hours.models import WorkLogEntry, hours_between
 from working_hours.periods import local_today
 
-AMS = WorkLogEntry.Category.AMS
 NON_AMS = WorkLogEntry.Category.NON_AMS
 
 
@@ -21,29 +27,20 @@ def quarter(hours: float) -> Decimal:
 
 
 def day_total(rng: random.Random) -> float:
-    """Mostly a ~8h day with some variance; occasionally a short one."""
-    if rng.random() < 0.1:
-        return rng.uniform(2, 5)
-    return min(9.0, max(4.0, rng.gauss(8, 0.75)))
+    """A day's Non-AMS time (meetings, training, admin): usually 1–5 h."""
+    return min(6.0, max(0.5, rng.gauss(3, 1.2)))
 
 
 def split_day(rng: random.Random, total: Decimal) -> list[tuple[str, Decimal]]:
-    """1–3 entries whose hours sum exactly to `total`, split between AMS and Non-AMS."""
-    count = rng.choices([1, 2, 3], weights=[2, 5, 3])[0]
-    if count == 1:
-        return [(AMS if rng.random() < 0.65 else NON_AMS, total)]
-
-    ams = min(total, max(Decimal("0.25"), quarter(float(total) * rng.uniform(0.4, 0.8))))
-    non_ams = total - ams
-    entries = [(AMS, ams), (NON_AMS, non_ams)]
-    if count == 3:
-        # Split the larger bucket into two separate log lines.
-        category, hours = max(entries, key=lambda e: e[1])
-        first = quarter(float(hours) * rng.uniform(0.3, 0.7))
-        if Decimal(0) < first < hours:
-            entries.remove((category, hours))
-            entries += [(category, first), (category, hours - first)]
-    return [e for e in entries if e[1] > 0]
+    """1–3 Non-AMS entries whose hours sum exactly to `total`."""
+    count = rng.choices([1, 2, 3], weights=[4, 4, 2])[0]
+    parts, left = [], total
+    for _ in range(count - 1):
+        piece = quarter(float(left) * rng.uniform(0.3, 0.7))
+        if Decimal(0) < piece < left:
+            parts.append(piece)
+            left -= piece
+    return [(NON_AMS, hours) for hours in [*parts, left] if hours > 0]
 
 
 def timed_entries(rng: random.Random, user, day, parts) -> list[WorkLogEntry]:
@@ -74,7 +71,7 @@ def timed_entries(rng: random.Random, user, day, parts) -> list[WorkLogEntry]:
 
 
 class Command(DevOnlyCommand):
-    help = "Clear and regenerate WorkLogEntry rows for all staff users."
+    help = "Clear and regenerate the manual (Non-AMS) work-log entries of all staff users."
 
     def add_arguments(self, parser):
         parser.add_argument("--days", type=int, default=90, help="How many days back to fill.")

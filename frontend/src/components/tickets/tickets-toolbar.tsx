@@ -57,6 +57,7 @@ export function TicketsToolbar({
   advancedOpen,
   onAdvancedChange,
   onClearAll,
+  actions,
 }: {
   table: TicketsTable;
   query: string;
@@ -64,6 +65,8 @@ export function TicketsToolbar({
   advancedOpen: boolean;
   onAdvancedChange: (open: boolean) => void;
   onClearAll: () => void;
+  /** Extra controls at the end of the search row (e.g. the Reports page's Export CSV). */
+  actions?: ReactNode;
 }) {
   const status = table.getColumn("status");
   const site = table.getColumn("siteName");
@@ -125,6 +128,8 @@ export function TicketsToolbar({
             </span>
           )}
         </label>
+
+        {actions && <div className="ml-auto flex items-center gap-2">{actions}</div>}
       </div>
 
       <AnimatePresence initial={false}>

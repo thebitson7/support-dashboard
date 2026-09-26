@@ -95,15 +95,17 @@ class WorkingHoursPermissionTests(APITestCase):
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("user_id", response.json())
 
-    def test_inactive_user_is_not_found_even_for_admin(self):
+    def test_a_deactivated_users_history_stays_readable_for_admins(self):
         self.bob.is_active = False
         self.bob.save()
         self.client.force_authenticate(self.admin)
 
         response = self.client.get(SUMMARY_URL, {"user_id": self.bob.pk})
 
-        self.assertEqual(response.status_code, 404)
-        self.assertEqual(response.json()["detail"], "User not found.")
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(self.periods(response)["today"]["total_hours"], 3.0)
+        # Unknown ids are still a 404.
+        self.assertEqual(self.client.get(SUMMARY_URL, {"user_id": 999999}).json()["detail"], "User not found.")
 
     def test_user_list_excludes_inactive_users_and_admins(self):
         self.bob.is_active = False
@@ -399,13 +401,17 @@ class AdminEntryTests(EntryTestCase):
         self.assertEqual(self.log(span("09:00", "10:00"), user_id=999999).status_code, 404)
         self.assertFalse(WorkLogEntry.objects.exists())
 
-    def test_deactivated_target_is_not_found(self):
+    def test_a_deactivated_users_entries_can_be_read_but_not_written(self):
         entry = make_entry(user=self.bob, date=self.TODAY, category="ams", hours=2)
         self.bob.is_active = False
         self.bob.save()
 
+        # History (their Job Sheet) stays readable...
+        listed = self.client.get(ENTRIES_URL, {"user_id": self.bob.pk})
+        self.assertEqual((listed.status_code, [e["id"] for e in listed.json()]), (200, [entry.pk]))
+        self.assertEqual(self.client.get(entry_url(entry.pk)).status_code, 200)
+        # ...but nothing new is logged for, or changed on, a deactivated account.
         self.assertEqual(self.log(span("09:00", "10:00"), user_id=self.bob.pk).status_code, 404)
-        self.assertEqual(self.client.get(ENTRIES_URL, {"user_id": self.bob.pk}).status_code, 404)
         self.assertEqual(
             self.client.patch(entry_url(entry.pk), {"end_time": "10:00"}, format="json").status_code, 404
         )

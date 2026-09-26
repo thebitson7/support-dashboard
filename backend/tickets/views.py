@@ -1,8 +1,10 @@
 import json
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import Case, F, Q, Value, When
 from django.db.models.functions import Concat
 from django.http import QueryDict
+from django.utils import timezone
 from django.utils.dateparse import parse_datetime
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
@@ -10,8 +12,10 @@ from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
+from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminRoleOrReadOnly
+from core.exports import csv_response, text_cell
 
 from .models import Customer, Site, Ticket, WorkDoneCode
 from .serializers import (
@@ -93,6 +97,60 @@ def parse_instant(params, name: str):
     return value
 
 
+def filtered_tickets(params):
+    """
+    The tickets table's rows for a set of query params (filters, search,
+    ordering; no paging), shared by the list and its CSV export so the two
+    can never disagree.
+    """
+    qs = Ticket.objects.select_related("site", "cms_closed_by", "created_by").annotate(
+        status_label=Case(
+            When(cms_closed_on__isnull=False, then=Value("closed")), default=Value("open")
+        )
+    )
+
+    status = params.get("status")
+    if status:
+        if status not in ("open", "closed"):
+            raise ValidationError({"status": "Use “open” or “closed”."})
+        qs = qs.filter(status_label=status)
+
+    site = params.get("site")
+    if site:
+        # Range-checked too: ids past the database integer size are a 400, not a 500.
+        if not (site.isascii() and site.isdigit()) or not 0 < int(site) <= MAX_ID:
+            raise ValidationError({"site": "Must be a site id."})
+        qs = qs.filter(site_id=int(site))
+
+    after = parse_instant(params, "received_after")
+    before = parse_instant(params, "received_before")
+    if after:
+        qs = qs.filter(received_at__gte=after)
+    if before:
+        qs = qs.filter(received_at__lte=before)
+
+    term = params.get("search", "").strip()
+    if term:
+        qs = qs.annotate(
+            assigned_name=person_name("assigned_to"),
+            creator_name=person_name("created_by"),
+            closer_name=person_name("cms_closed_by"),
+        ).filter(
+            Q(site__name__icontains=term)
+            | Q(site__ocn__icontains=term)
+            | Q(cms_next_ticket_no__icontains=term)
+            | Q(status_label__icontains=term)
+            | Q(assigned_name__icontains=term)
+            | Q(assigned_to__username__icontains=term)
+            | Q(creator_name__icontains=term)
+            | Q(created_by__username__icontains=term)
+            | Q(closer_name__icontains=term)
+            | Q(cms_closed_by__username__icontains=term)
+        )
+
+    return qs.order_by(*parse_ordering(params.get("ordering") or DEFAULT_ORDERING))
+
+
 class TicketWriteMixin:
     """Shared by create and update: JSON or multipart bodies, one normalised payload."""
 
@@ -147,53 +205,7 @@ class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
         return TicketWriteSerializer if self.request.method == "POST" else TicketListSerializer
 
     def get_queryset(self):
-        params = self.request.query_params
-        qs = Ticket.objects.select_related("site", "cms_closed_by", "created_by").annotate(
-            status_label=Case(
-                When(cms_closed_on__isnull=False, then=Value("closed")), default=Value("open")
-            )
-        )
-
-        status = params.get("status")
-        if status:
-            if status not in ("open", "closed"):
-                raise ValidationError({"status": "Use “open” or “closed”."})
-            qs = qs.filter(status_label=status)
-
-        site = params.get("site")
-        if site:
-            # Range-checked too: ids past the database integer size are a 400, not a 500.
-            if not (site.isascii() and site.isdigit()) or not 0 < int(site) <= MAX_ID:
-                raise ValidationError({"site": "Must be a site id."})
-            qs = qs.filter(site_id=int(site))
-
-        after = parse_instant(params, "received_after")
-        before = parse_instant(params, "received_before")
-        if after:
-            qs = qs.filter(received_at__gte=after)
-        if before:
-            qs = qs.filter(received_at__lte=before)
-
-        term = params.get("search", "").strip()
-        if term:
-            qs = qs.annotate(
-                assigned_name=person_name("assigned_to"),
-                creator_name=person_name("created_by"),
-                closer_name=person_name("cms_closed_by"),
-            ).filter(
-                Q(site__name__icontains=term)
-                | Q(site__ocn__icontains=term)
-                | Q(cms_next_ticket_no__icontains=term)
-                | Q(status_label__icontains=term)
-                | Q(assigned_name__icontains=term)
-                | Q(assigned_to__username__icontains=term)
-                | Q(creator_name__icontains=term)
-                | Q(created_by__username__icontains=term)
-                | Q(closer_name__icontains=term)
-                | Q(cms_closed_by__username__icontains=term)
-            )
-
-        return qs.order_by(*parse_ordering(params.get("ordering") or DEFAULT_ORDERING))
+        return filtered_tickets(self.request.query_params)
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
@@ -206,6 +218,67 @@ class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
         serializer.is_valid(raise_exception=True)
         ticket = serializer.save(created_by=request.user)
         return Response(serializer.to_representation(ticket), status=201)
+
+
+class TicketExportView(APIView):
+    """
+    GET: the tickets table as CSV. Same query params as the list (search,
+    status, site, received_after / received_before, ordering; paging is
+    ignored), and every matching row, not one page. Open to anyone signed in,
+    like the list itself.
+
+    The 11 columns are the table's, in its order. Date-times are written as
+    "YYYY-MM-DD HH:MM" (spreadsheets read them as dates) in the zone named in
+    their column headings: `tz` (an IANA name) when given, so the file shows
+    the same clock times as the table on screen, which renders in the
+    browser's zone; otherwise the requester's profile zone.
+    """
+
+    def get(self, request):
+        requested = request.query_params.get("tz")
+        if requested:
+            try:
+                tz = ZoneInfo(requested)
+            except (ZoneInfoNotFoundError, ValueError):
+                raise ValidationError({"tz": "Use an IANA time zone name, e.g. Asia/Kuala_Lumpur."})
+        else:
+            tz = request.user.tzinfo  # falls back safely if the profile's zone is bad
+        zone = tz.key
+
+        def when(value):
+            return value.astimezone(tz).strftime("%Y-%m-%d %H:%M") if value else ""
+
+        rows = (
+            [
+                text_cell(t.site.name),
+                text_cell(t.site.ocn),
+                text_cell(t.cms_next_ticket_no),
+                when(t.received_at),
+                t.status_label.title(),
+                "Yes" if t.is_pre else "No",
+                text_cell(t.cms_closed_by.display_name) if t.cms_closed_by else "",
+                text_cell(t.created_by.display_name),
+                f"{t.total_duration_hours:.2f}",
+                when(t.cms_closed_on),
+                when(t.service_closed_date),
+            ]
+            for t in filtered_tickets(request.query_params).iterator(chunk_size=500)
+        )
+        header = [
+            "Site Name",
+            "Site OCN",
+            "CMS Next Ticket No",
+            f"Ticket Received Date Time ({zone})",
+            "Status",
+            "Pre",
+            "Ticket Closed By",
+            "Created By",
+            "Total Duration (Hours)",
+            f"CMS Ticket Closed On ({zone})",
+            f"Service Closed Date ({zone})",
+        ]
+        today = timezone.localdate(timezone=tz)
+        return csv_response(f"tickets-{today.isoformat()}.csv", header, rows)
 
 
 class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):

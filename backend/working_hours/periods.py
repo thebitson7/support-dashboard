@@ -4,10 +4,11 @@ from dataclasses import dataclass
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
-from django.db.models import Q, Sum
+from django.db.models import Q
 from django.utils import timezone
 
 from .models import WorkLogEntry
+from .totals import Totals, total_expressions
 
 # Fixed goals (hours), matching the Home dashboard's pattern.
 DAY_GOAL = Decimal(8)
@@ -57,25 +58,23 @@ def build_periods(today: date) -> list[Period]:
     ]
 
 
-def _hours(value: Decimal | None) -> float:
-    return float(round(value or Decimal(0), 2))
-
-
 def summarize(user, today: date) -> list[dict]:
     """
-    Aggregates every period's AMS / Non-AMS hours for `user` in a single query.
-    `today` anchors the periods; callers pass it in the viewer's time zone.
+    Every period's AMS / Non-AMS time for `user`, in a single query. `today`
+    anchors the periods; callers pass it in the viewer's time zone.
+
+    Totalled in exact minutes from the entries' times (working_hours.totals),
+    the same arithmetic as the reports and the Job Sheet, so no two screens
+    disagree about the same entries. Each figure comes as minutes (to add and
+    display) and as hours (2 decimals, for reading).
     """
     periods = build_periods(today)
     aggregates = {}
     for p in periods:
-        in_range = Q(date__range=(p.start, p.end))
-        for category in WorkLogEntry.Category:
-            aggregates[f"{p.key}__{category.value}"] = Sum(
-                "hours", filter=in_range & Q(category=category)
-            )
+        for name, expression in total_expressions(within=Q(date__range=(p.start, p.end))).items():
+            aggregates[f"{p.key}__{name}"] = expression
 
-    totals = WorkLogEntry.objects.filter(
+    row = WorkLogEntry.objects.filter(
         user=user,
         date__gte=min(p.start for p in periods),
         date__lte=max(p.end for p in periods),
@@ -83,21 +82,21 @@ def summarize(user, today: date) -> list[dict]:
 
     result = []
     for p in periods:
-        ams = totals[f"{p.key}__{WorkLogEntry.Category.AMS}"] or Decimal(0)
-        non_ams = totals[f"{p.key}__{WorkLogEntry.Category.NON_AMS}"] or Decimal(0)
-        total = ams + non_ams
+        totals = Totals.of({name: row[f"{p.key}__{name}"] for name in ("total", "ams", "non_ams", "count")})
+        goal_minutes = int(p.goal_hours * 60)
+        figures = totals.as_dict()
+        figures.pop("entry_count")
         result.append(
             {
                 "key": p.key,
                 "label": p.label,
                 "start_date": p.start.isoformat(),
                 "end_date": p.end.isoformat(),
-                "total_hours": _hours(total),
-                "goal_hours": _hours(p.goal_hours),
-                "ams_hours": _hours(ams),
-                "non_ams_hours": _hours(non_ams),
+                **figures,
+                "goal_minutes": goal_minutes,
+                "goal_hours": float(p.goal_hours),
                 # Can exceed 100 when the goal is beaten.
-                "percent_complete": round(total / p.goal_hours * 100) if p.goal_hours else 0,
+                "percent_complete": round(totals.total_minutes / goal_minutes * 100) if goal_minutes else 0,
             }
         )
     return result

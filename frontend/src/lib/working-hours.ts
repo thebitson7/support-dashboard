@@ -56,20 +56,19 @@ function formatRange(start: string, end: string): string {
   return `${shortFormat.format(parseDay(start))} – ${shortFormat.format(parseDay(end))}`;
 }
 
-const toMinutes = (hours: number) => Math.round(hours * 60);
-
-/** Maps the API's period onto the shape the Home period cards already render. */
+/**
+ * Maps the API's period onto the shape the Home period cards already render.
+ * Uses the API's exact minutes (never hours x 60: rounded hours drift).
+ */
 export function toPeriodSummary(p: ApiPeriod): PeriodSummary {
-  const amsMinutes = toMinutes(p.ams_hours);
-  const nonAmsMinutes = toMinutes(p.non_ams_hours);
   return {
     key: p.key,
     label: p.label,
     dateRange: formatRange(p.start_date, p.end_date),
-    workedMinutes: amsMinutes + nonAmsMinutes,
-    goalMinutes: toMinutes(p.goal_hours),
-    amsMinutes,
-    nonAmsMinutes,
+    workedMinutes: p.total_minutes,
+    goalMinutes: p.goal_minutes,
+    amsMinutes: p.ams_minutes,
+    nonAmsMinutes: p.non_ams_minutes,
     percentComplete: p.percent_complete,
   };
 }

@@ -32,8 +32,10 @@ turned into a Bearer token (see `src/lib/server/session.ts`).
 - `src/components/lookups/` — the shared table + dialog behind the five Lookups pages
 - `src/components/common/` — shared form pieces (search combobox, date-time picker, fields)
 - `src/components/ui/` — shadcn/ui primitives
-- `src/lib/` — API client, auth context, date helpers, motion helpers, Home mock data
+- `src/components/job-sheets/`, `src/components/reports/`, `src/components/working-hours/` — Job Sheets, Reports and Working Hours pieces
+- `src/lib/` — API client (incl. CSV downloads), auth context, date helpers, motion helpers, Home mock data
 - `src/config/nav.ts` — sidebar navigation (single source of truth)
 
-Data is currently mocked (`src/lib/mock-data.ts`, `src/lib/mock-tickets.ts`);
+Everything is live API data except the Home dashboard, which still renders
+mock data from `src/lib/mock-data.ts`;
 each module exposes a single seam to swap for real API calls.

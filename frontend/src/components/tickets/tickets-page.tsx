@@ -8,10 +8,17 @@ import { MotionConfig, motion, useReducedMotion } from "framer-motion";
 import type { ComboOption } from "@/components/common/search-combobox";
 import type { TicketStatus } from "@/types/tickets";
 import { EASE } from "@/lib/motion";
-import { ticketListPath, toAmsTicket, type TicketListResponse } from "@/lib/tickets-api";
+import {
+  ticketExportPath,
+  ticketListPath,
+  toAmsTicket,
+  type TicketListQuery,
+  type TicketListResponse,
+} from "@/lib/tickets-api";
 import { useApiGet } from "@/hooks/use-api";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { ExportButton } from "@/components/common/export-button";
 import { Toaster } from "@/components/ui/sonner";
 import { TicketDialog } from "@/components/tickets/ticket-form/ticket-dialog";
 import { TicketsPagination } from "@/components/tickets/tickets-pagination";
@@ -48,10 +55,10 @@ function Enter({
   );
 }
 
-/** The table's view state -> the API request for it. */
-function listPath(view: TicketsViewState): string {
+/** The table's view state -> the API query for it. */
+function viewQuery(view: TicketsViewState): TicketListQuery {
   const filter = (id: string) => view.columnFilters.find((f) => f.id === id)?.value;
-  return ticketListPath({
+  return {
     pageIndex: view.pagination.pageIndex,
     pageSize: view.pagination.pageSize,
     sort: view.sorting[0],
@@ -59,10 +66,16 @@ function listPath(view: TicketsViewState): string {
     status: filter("status") as TicketStatus | undefined,
     siteId: (filter("siteName") as ComboOption | undefined)?.value,
     receivedRange: filter("receivedAt") as [number, number] | undefined,
-  });
+  };
 }
 
-export function TicketsPage() {
+/**
+ * The AMS Tickets table with its search, filters and paging. `readOnly` is
+ * the Reports page's version: no page header or New Ticket, no Edit column
+ * or ticket dialog, and an Export CSV of the current view instead (the page
+ * around it supplies the title and the toast container).
+ */
+export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
   const reduceMotion = useReducedMotion();
   const [view, setView] = useState<TicketsViewState>(DEFAULT_VIEW);
   const [query, setQuery] = useState("");
@@ -73,7 +86,9 @@ export function TicketsPage() {
     key: 0,
   });
 
-  const list = useApiGet<TicketListResponse>(listPath(view), { keepPreviousData: true });
+  const list = useApiGet<TicketListResponse>(ticketListPath(viewQuery(view)), {
+    keepPreviousData: true,
+  });
   const rows = useMemo(() => list.data?.results.map(toAmsTicket) ?? [], [list.data]);
   const table = useTicketsTable(rows, list.data?.count ?? 0, view, setView);
 
@@ -138,50 +153,52 @@ export function TicketsPage() {
   return (
     <MotionConfig reducedMotion="user">
       <div className="flex min-h-[34rem] w-full flex-1 flex-col gap-5">
-        <Enter delay={0}>
-          <div className="grid gap-3">
-            <nav aria-label="Breadcrumb">
-              <ol className="text-label flex items-center gap-1.5">
-                <li>
-                  <Link
-                    href="/"
-                    className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                  >
-                    Home
-                  </Link>
-                </li>
-                <li aria-hidden className="flex">
-                  <ChevronRight className="size-4" strokeWidth={2} />
-                </li>
-                <li aria-current="page" className="font-semibold text-foreground">
-                  AMS Tickets
-                </li>
-              </ol>
-            </nav>
+        {!readOnly && (
+          <Enter delay={0}>
+            <div className="grid gap-3">
+              <nav aria-label="Breadcrumb">
+                <ol className="text-label flex items-center gap-1.5">
+                  <li>
+                    <Link
+                      href="/"
+                      className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
+                    >
+                      Home
+                    </Link>
+                  </li>
+                  <li aria-hidden className="flex">
+                    <ChevronRight className="size-4" strokeWidth={2} />
+                  </li>
+                  <li aria-current="page" className="font-semibold text-foreground">
+                    AMS Tickets
+                  </li>
+                </ol>
+              </nav>
 
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <h1 className="text-2xl font-extrabold tracking-tight">AMS Tickets</h1>
-              {/* The page's primary action: full-size, brand orange, a lift on
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <h1 className="text-2xl font-extrabold tracking-tight">AMS Tickets</h1>
+                {/* The page's primary action: full-size, brand orange, a lift on
                   hover and a press-in on click (same feel as the cards). */}
-              <motion.div
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.16, ease: EASE }}
-              >
-                <Button
-                  size="lg"
-                  onClick={openNewTicket}
-                  className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
+                <motion.div
+                  whileHover={{ y: -1 }}
+                  whileTap={{ scale: 0.97 }}
+                  transition={{ duration: 0.16, ease: EASE }}
                 >
-                  <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
-                  New Ticket
-                </Button>
-              </motion.div>
+                  <Button
+                    size="lg"
+                    onClick={openNewTicket}
+                    className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
+                  >
+                    <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
+                    New Ticket
+                  </Button>
+                </motion.div>
+              </div>
             </div>
-          </div>
-        </Enter>
+          </Enter>
+        )}
 
-        <Enter delay={0.08}>
+        <Enter delay={readOnly ? 0 : 0.08}>
           <TicketsToolbar
             table={table}
             query={query}
@@ -189,10 +206,20 @@ export function TicketsPage() {
             advancedOpen={advancedOpen}
             onAdvancedChange={setAdvancedOpen}
             onClearAll={clearAll}
+            actions={
+              readOnly && (
+                <ExportButton
+                  // The table's current sort, search and filters; every row.
+                  path={ticketExportPath(viewQuery(view))}
+                  fallbackName="tickets.csv"
+                  disabled={!data || data.count === 0}
+                />
+              )
+            }
           />
         </Enter>
 
-        <Enter delay={0.16} className="flex min-h-0 flex-1 flex-col">
+        <Enter delay={readOnly ? 0.08 : 0.16} className="flex min-h-0 flex-1 flex-col">
           <Card className="min-h-0 flex-1 gap-0 py-0 shadow-elev-1">
             <TicketsTableView
               table={table}
@@ -204,8 +231,8 @@ export function TicketsPage() {
               error={outOfRange ? undefined : list.error}
               onClear={clearAll}
               onRetry={list.retry}
-              onCreate={openNewTicket}
-              onEdit={openEditTicket}
+              onCreate={readOnly ? undefined : openNewTicket}
+              onEdit={readOnly ? undefined : openEditTicket}
             />
             {data && data.total > 0 && !list.error && (
               <TicketsPagination table={table} totalRows={data.total} />
@@ -214,17 +241,19 @@ export function TicketsPage() {
         </Enter>
       </div>
 
-      <TicketDialog
-        key={dialog.key}
-        open={dialog.open}
-        ticketId={dialog.ticketId}
-        onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
-        // A new ticket: jump to the default view so it's visible. An edit:
-        // refetch the current page in place, so e.g. a just-closed ticket
-        // shows as Closed straight away.
-        onSaved={dialog.ticketId === undefined ? showCreated : list.retry}
-      />
-      <Toaster position="bottom-right" />
+      {!readOnly && (
+        <TicketDialog
+          key={dialog.key}
+          open={dialog.open}
+          ticketId={dialog.ticketId}
+          onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
+          // A new ticket: jump to the default view so it's visible. An edit:
+          // refetch the current page in place, so e.g. a just-closed ticket
+          // shows as Closed straight away.
+          onSaved={dialog.ticketId === undefined ? showCreated : list.retry}
+        />
+      )}
+      {!readOnly && <Toaster position="bottom-right" />}
     </MotionConfig>
   );
 }

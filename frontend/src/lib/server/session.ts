@@ -97,14 +97,19 @@ export async function callDjango(
   }
 }
 
-/** Relays Django's status, JSON body and Retry-After to the browser, nothing else. */
+/**
+ * Relays Django's status, body, and a short allow-list of headers to the
+ * browser, nothing else. The body is passed through as bytes: decoding it as
+ * text would drop a CSV's UTF-8 byte-order mark, which Excel relies on.
+ */
 export async function relay(upstream: Response): Promise<NextResponse> {
-  const body = upstream.status === 204 ? null : await upstream.text();
+  const body = upstream.status === 204 ? null : await upstream.arrayBuffer();
   const headers = new Headers();
-  const contentType = upstream.headers.get("content-type");
-  if (contentType) headers.set("Content-Type", contentType);
-  const retryAfter = upstream.headers.get("retry-after");
-  if (retryAfter) headers.set("Retry-After", retryAfter);
+  // Content-Disposition: a CSV export's "attachment; filename=…".
+  for (const name of ["content-type", "content-disposition", "retry-after"]) {
+    const value = upstream.headers.get(name);
+    if (value) headers.set(name, value);
+  }
   headers.set("Cache-Control", "no-store");
   return new NextResponse(body, { status: upstream.status, headers });
 }

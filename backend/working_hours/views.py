@@ -4,7 +4,7 @@ from django.utils.dateparse import parse_date
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateDestroyAPIView
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import SAFE_METHODS, IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
@@ -26,8 +26,12 @@ def target_user(request, param: str = "user_id") -> User:
     Whose working hours a request is about.
 
     Staff: always themselves (IsAdminRoleOrSelf has already refused a request
-    naming anyone else). Admin: `param` is required and may be any active
-    user; deactivated accounts are a 404 like unknown ones.
+    naming anyone else). Admin: `param` is required and may name any user.
+
+    Deactivated accounts: their history stays readable (reads: the summary,
+    a Job Sheet day), as everywhere else in the app, but nothing new can be
+    written for them, so writes treat them as gone (404). Pickers and
+    "everyone" lists leave them out separately.
     """
     if not request.user.is_admin_role:
         return request.user
@@ -38,8 +42,8 @@ def target_user(request, param: str = "user_id") -> User:
     # isascii() matters: str.isdigit() accepts "²", which int() rejects.
     if not (raw_id.isascii() and raw_id.isdigit()) or not 0 < int(raw_id) <= MAX_ID:
         raise ValidationError({param: "Must be a positive integer user id."})
-    # Deactivated accounts are treated as gone, for admins too.
-    target = User.objects.filter(pk=int(raw_id), is_active=True).first()
+    people = User.objects.all() if request.method in SAFE_METHODS else User.objects.filter(is_active=True)
+    target = people.filter(pk=int(raw_id)).first()
     if target is None:
         raise NotFound("User not found.")
     return target
@@ -61,8 +65,8 @@ class SummaryView(APIView):
     Period totals for one user.
 
     Staff: always their own data; naming anyone else is a 403 (enforced by
-    IsAdminRoleOrSelf). Admin: `user_id` is required and may be any
-    active user; deactivated users are a 404 like unknown ones.
+    IsAdminRoleOrSelf). Admin: `user_id` is required and may be any user,
+    deactivated ones included (their history stays readable).
 
     Period boundaries ("today", "this week"...) are always cut in the
     *viewer's* time zone, i.e. the requester's, whoever's data is shown.
@@ -143,8 +147,9 @@ class AutoEntryLocked(APIException):
 class EntryDetailView(RetrieveUpdateDestroyAPIView):
     """
     GET / PATCH {date, start_time, end_time, category, note} / DELETE one entry. Staff: only
-    their own (someone else's is a 403). Admin: anyone's, except that entries
-    of deactivated users are a 404, as on the summary. The owner never changes.
+    their own (someone else's is a 403). Admin: anyone's. A deactivated
+    user's entries can be read but not changed (a 404 for PATCH / DELETE),
+    the same rule as target_user(). The owner never changes.
 
     Auto entries (mirrored from ticket activities) can be read but not
     changed here: PATCH / DELETE answer 409, pointing at the ticket.
@@ -153,9 +158,12 @@ class EntryDetailView(RetrieveUpdateDestroyAPIView):
     permission_classes = [IsAuthenticated, IsAdminRoleOrOwner]
     serializer_class = WorkLogEntrySerializer
     http_method_names = ["get", "patch", "delete", "head", "options"]
-    queryset = WorkLogEntry.objects.filter(user__is_active=True).select_related(
-        "user", "ticket_activity__ticket"
-    )
+
+    def get_queryset(self):
+        entries = WorkLogEntry.objects.select_related("user", "ticket_activity__ticket")
+        if self.request.method in SAFE_METHODS:
+            return entries
+        return entries.filter(user__is_active=True)
 
     def _refuse_auto(self):
         entry = self.get_object()  # 404 / 403 first, as for any entry

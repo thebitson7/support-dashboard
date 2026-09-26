@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, Lock, Pencil, Plus, RotateCw, Ticket, Trash2 } from "lucide-react";
+import { ClipboardList, Lock, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 
 import type { WorkLogEntry } from "@/types/working-hours";
 import type { ApiError } from "@/lib/api";
@@ -10,6 +10,7 @@ import {
   entryMinutes,
   formatTimeRange,
 } from "@/lib/working-hours";
+import { LoadErrorPlaceholder } from "@/components/common/state-placeholder";
 import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -19,11 +20,16 @@ import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip
 const categoryLabel = (entry: WorkLogEntry) =>
   WORK_CATEGORIES.find((c) => c.value === entry.category)?.label ?? entry.category;
 
-function CategoryPill({ category }: { category: WorkLogEntry["category"] }) {
+/**
+ * AMS / Non-AMS label. Fixed width so the category column lines up across
+ * rows; nowrap, since at w-20 "Non-AMS" broke at its hyphen onto two lines.
+ * Shared by the Job Sheet and the Reports drill-down.
+ */
+export function CategoryPill({ category }: { category: WorkLogEntry["category"] }) {
   const color = CATEGORY_COLOR[category];
   return (
     <span
-      className="inline-flex w-20 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold"
+      className="inline-flex w-22 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap"
       style={{
         color: `color-mix(in oklab, ${color}, var(--foreground) 45%)`,
         backgroundColor: `color-mix(in oklab, ${color} 14%, transparent)`,
@@ -36,18 +42,15 @@ function CategoryPill({ category }: { category: WorkLogEntry["category"] }) {
 }
 
 /** In place of edit/delete on an auto entry: why it can't be changed here. */
-function FromTicketBadge({ reference }: { reference: string }) {
+export function FromTicketBadge({ reference }: { reference: string }) {
   return (
     <Tooltip>
+      {/* A real button (the trigger's default element), so it's focusable and
+          its name is announced; a span with aria-label is not reliably read. */}
       <TooltipTrigger
-        render={
-          <span
-            // Focusable so keyboard users can reach the explanation too.
-            tabIndex={0}
-            className="inline-flex h-7 shrink-0 items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
-            aria-label={`From ${reference}. Recorded automatically from the ticket's activity; to change it, edit the activity on the ticket.`}
-          />
-        }
+        type="button"
+        className="inline-flex h-7 shrink-0 cursor-default items-center gap-1.5 rounded-md px-2 text-xs font-medium text-muted-foreground outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        aria-label={`From ${reference}. Recorded automatically from the ticket's activity; to change it, edit the activity on the ticket.`}
       >
         <Lock className="size-3.5" aria-hidden />
         From ticket
@@ -97,22 +100,9 @@ export function DayEntries({
       </header>
 
       {error && !entries ? (
-        <div
-          role="alert"
-          className="text-label flex flex-wrap items-center justify-between gap-3 px-5 py-4"
-        >
-          {error.status === 404
-            ? "This person's account doesn't exist or has been deactivated."
-            : error.status === 403
-              ? "You don't have permission to view this job sheet."
-              : "Couldn't load this day's entries."}
-          {error.status !== 403 && error.status !== 404 && (
-            <Button variant="outline" size="sm" onClick={onRetry}>
-              <RotateCw aria-hidden />
-              Try again
-            </Button>
-          )}
-        </div>
+        // The app-wide load-error state (Tickets, Lookups, Reports): offline
+        // vs. the API's own message (e.g. "User not found."), with a retry.
+        <LoadErrorPlaceholder error={error} what="this day's entries" onRetry={onRetry} />
       ) : !entries ? (
         <div className="grid gap-3 px-5 py-4" role="status" aria-label="Loading entries">
           <Skeleton className="h-5 w-2/3 rounded-full motion-reduce:animate-none" />

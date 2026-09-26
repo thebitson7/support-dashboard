@@ -53,8 +53,8 @@ Run migrations and start the dev server:
 ```bash
 python manage.py migrate
 python manage.py seed_users                  # local dev users (password123)
-python manage.py seed_work_logs              # ~90 days of working-hours data
-python manage.py seed_tickets_support_data   # sites, customers, work-done codes
+python manage.py seed_tickets_support_data   # countries, sites, customers, work-done codes, holidays
+python manage.py seed_work_logs              # ~90 days of manual (Non-AMS) hours per staff user
 python manage.py runserver 8000
 ```
 
@@ -88,15 +88,20 @@ The app is now available at `http://localhost:3000`.
 
 ## Running both together
 
-With the backend running on port 8000 and the frontend on port 3000, open `http://localhost:3000` — the home page performs a live connectivity check against the backend's `/api/ping/` endpoint and shows a "Connected" badge with the backend's response once it succeeds.
+With the backend running on port 8000 and the frontend on port 3000, open `http://localhost:3000` and sign in (e.g. `admin` / `password123` after `seed_users`). Use `localhost`, not `127.0.0.1`: the API gateway refuses cross-origin writes, and Next reports its origin as `localhost`.
+
+The seed commands are for local development only and refuse to run with `DEBUG` off. AMS hours are never seeded: they come only from ticket activities that have a resolver. To (re)build those work-log entries from existing activities, e.g. after a data import, run `python manage.py sync_ticket_work_logs` (safe in any environment).
 
 ## Backend app structure convention
 
 The Django project follows one app per domain area:
 
-- `core` — cross-cutting endpoints not tied to a specific domain (e.g. the `/api/ping/` health check).
-- `accounts` — users, authentication (custom `User` model, JWT token endpoints).
-- Future domain areas (e.g. tickets) get their own app the same way.
+- `core` — cross-cutting pieces: the `/api/ping/` health check, CSV export helpers, the dev-only command guard.
+- `accounts` — users, roles, authentication (custom `User` model, JWT token endpoints, shared permission classes).
+- `tickets` — AMS tickets and their activities, plus the reference data they use (countries, sites, customers, work-done codes, holidays).
+- `lookups` — the management API for that reference data.
+- `working_hours` — work-log entries (manual Non-AMS, and AMS mirrored from ticket activities), period summaries, Job Sheet data.
+- `reports` — read-only, report-shaped views (team activity) over the other apps' data.
 
 Each app owns its own `urls.py`, included from `config/urls.py` under `/api/<app-name>/` (accounts' auth endpoints are the one exception, mounted at `/api/auth/` since `POST /api/auth/token/` reads better than `/api/accounts/token/`). Models, serializers, and views for a domain area live inside that app — avoid putting unrelated logic in `core`.
 

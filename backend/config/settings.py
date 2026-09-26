@@ -62,6 +62,7 @@ INSTALLED_APPS = [
     "working_hours",
     "tickets",
     "lookups",
+    "reports",
 ]
 
 AUTH_USER_MODEL = "accounts.User"
