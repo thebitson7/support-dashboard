@@ -195,7 +195,8 @@ export function TeamActivity({ viewer }: { viewer: AuthUser }) {
         aria-label="Team activity table"
         tabIndex={0}
         // @container: the drill-downs size themselves to this visible width (100cqw).
-        className="scrollbar-styled @container min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        // relative: clips absolutely positioned descendants (sr-only text) too; without it they leaked out and made the page scroll sideways.
+        className="scrollbar-styled @container relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         <table
           aria-busy={report.isLoading || report.isRefreshing}

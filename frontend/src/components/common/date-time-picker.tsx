@@ -24,7 +24,7 @@ import {
   type LocalParts,
 } from "@/lib/local-datetime";
 import { Button } from "@/components/ui/button";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 
 // A date + time picker: a calendar month grid (Monday first) beside hour /
 // minute / AM-PM columns. Its value is a local "YYYY-MM-DDTHH:mm" string (or
@@ -343,6 +343,10 @@ export function DateTimePicker({
   return (
     <Popover
       open={open}
+      // Keeps Tab inside the calendar/time columns while open (it's a small
+      // dialog): without it, tabbing past the last button fell off the end of
+      // the page. Scrolling and outside clicks still work; Done/Esc close it.
+      modal="trap-focus"
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) onBlur?.();
@@ -451,9 +455,9 @@ export function DateTimePicker({
           <p className="text-caption min-w-0 truncate tabular-nums" aria-live="polite">
             {display || (timeOnly ? "No time chosen" : "No date chosen")}
           </p>
-          <Button type="button" size="sm" onClick={close}>
-            Done
-          </Button>
+          {/* A Popover close part (it also makes the focus trap work); closing
+              runs onOpenChange, which reports the blur like `close` did. */}
+          <PopoverClose render={<Button type="button" size="sm" />}>Done</PopoverClose>
         </div>
       </PopoverContent>
     </Popover>

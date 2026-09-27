@@ -1,10 +1,11 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
-import { ChevronRight, Plus } from "lucide-react";
+import dynamic from "next/dynamic";
+import { Plus } from "lucide-react";
 import { MotionConfig, motion, useReducedMotion } from "framer-motion";
 
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import type { ComboOption } from "@/components/common/search-combobox";
 import type { TicketStatus } from "@/types/tickets";
 import { EASE } from "@/lib/motion";
@@ -20,7 +21,6 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExportButton } from "@/components/common/export-button";
 import { Toaster } from "@/components/ui/sonner";
-import { TicketDialog } from "@/components/tickets/ticket-form/ticket-dialog";
 import { TicketsPagination } from "@/components/tickets/tickets-pagination";
 import { TicketsTableView, type TicketsEmptyKind } from "@/components/tickets/tickets-table";
 import {
@@ -31,6 +31,14 @@ import {
 import { TicketsToolbar } from "@/components/tickets/tickets-toolbar";
 
 const SEARCH_DEBOUNCE_MS = 250;
+
+// The New / Edit dialog is the biggest piece of this page (~33 KB gzipped)
+// and only needed on demand: it's split out, so the read-only Reports view
+// never downloads it, and the editable page fetches it in the background
+// once the table is up (see the preload below), so opening it stays instant.
+const loadTicketDialog = () =>
+  import("@/components/tickets/ticket-form/ticket-dialog").then((m) => m.TicketDialog);
+const TicketDialog = dynamic(loadTicketDialog, { ssr: false });
 const REVEAL_MS = 1000;
 
 /** Fades/slides a page section in once on mount. `delay` staggers the sections. */
@@ -107,6 +115,12 @@ export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
     };
   }, [list.data, reduceMotion]);
 
+  // Editable page: warm the dialog's chunk once the first rows are in.
+  const hasData = Boolean(list.data);
+  useEffect(() => {
+    if (!readOnly && hasData) void loadTicketDialog();
+  }, [readOnly, hasData]);
+
   // Debounced search: typing updates `query`; the request follows it.
   useEffect(() => {
     if (query === view.globalFilter) return;
@@ -156,24 +170,7 @@ export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
         {!readOnly && (
           <Enter delay={0}>
             <div className="grid gap-3">
-              <nav aria-label="Breadcrumb">
-                <ol className="text-label flex items-center gap-1.5">
-                  <li>
-                    <Link
-                      href="/"
-                      className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                    >
-                      Home
-                    </Link>
-                  </li>
-                  <li aria-hidden className="flex">
-                    <ChevronRight className="size-4" strokeWidth={2} />
-                  </li>
-                  <li aria-current="page" className="font-semibold text-foreground">
-                    AMS Tickets
-                  </li>
-                </ol>
-              </nav>
+              <Breadcrumb items={[{ label: "AMS Tickets" }]} />
 
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-extrabold tracking-tight">AMS Tickets</h1>

@@ -3,10 +3,10 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import Case, F, Q, Value, When
 from django.db.models.functions import Concat
-from django.http import QueryDict
+from django.http import FileResponse, QueryDict
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
-from rest_framework.exceptions import ValidationError
+from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
 from rest_framework.pagination import PageNumberPagination
 from rest_framework.parsers import FormParser, JSONParser, MultiPartParser
@@ -15,6 +15,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminRoleOrReadOnly
+from accounts.throttling import ExportRateThrottle
 from core.exports import csv_response, text_cell
 
 from .models import Customer, Site, Ticket, WorkDoneCode
@@ -234,6 +235,8 @@ class TicketExportView(APIView):
     browser's zone; otherwise the requester's profile zone.
     """
 
+    throttle_classes = [ExportRateThrottle]
+
     def get(self, request):
         requested = request.query_params.get("tz")
         if requested:
@@ -279,6 +282,33 @@ class TicketExportView(APIView):
         ]
         today = timezone.localdate(timezone=tz)
         return csv_response(f"tickets-{today.isoformat()}.csv", header, rows)
+
+
+class TicketAttachmentView(APIView):
+    """
+    GET: download a ticket's PDF attachment. Open to anyone signed in, like
+    reading the ticket itself; this is the only way uploaded files are
+    served (nothing is mounted at MEDIA_URL). 404 when the ticket has no
+    attachment, or its file is missing from storage.
+    """
+
+    def get(self, request, pk):
+        ticket = Ticket.objects.filter(pk=pk).only("id", "pdf_attachment").first()
+        if ticket is None or not ticket.pdf_attachment:
+            raise NotFound("This ticket has no attachment.")
+        try:
+            handle = ticket.pdf_attachment.open("rb")
+        except FileNotFoundError:
+            raise NotFound("The attachment file is missing.")
+        # Streamed in chunks; FileResponse closes the file when done.
+        response = FileResponse(
+            handle,
+            as_attachment=True,
+            filename=ticket.pdf_attachment.name.rsplit("/", 1)[-1],
+            content_type="application/pdf",
+        )
+        response["Cache-Control"] = "private, no-store"
+        return response
 
 
 class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):

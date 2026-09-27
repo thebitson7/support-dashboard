@@ -1,14 +1,13 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { Tabs } from "@base-ui/react/tabs";
 import { motion, MotionConfig, useReducedMotion } from "framer-motion";
-import { ChevronRight } from "lucide-react";
 import { cn } from "cn";
 
 import { useAuth, type AuthUser } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { TeamActivity } from "@/components/reports/team-activity";
 import { TicketsPage } from "@/components/tickets/tickets-page";
 import { Toaster } from "@/components/ui/sonner";
@@ -38,24 +37,7 @@ export default function ReportsPage() {
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
         >
-          <nav aria-label="Breadcrumb">
-            <ol className="text-label flex items-center gap-1.5">
-              <li>
-                <Link
-                  href="/"
-                  className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  Home
-                </Link>
-              </li>
-              <li aria-hidden className="flex">
-                <ChevronRight className="size-4" strokeWidth={2} />
-              </li>
-              <li aria-current="page" className="font-semibold text-foreground">
-                Reports
-              </li>
-            </ol>
-          </nav>
+          <Breadcrumb items={[{ label: "Reports" }]} />
           <div>
             <h1 className="text-2xl font-extrabold tracking-tight">Reports</h1>
             <p className="text-label">

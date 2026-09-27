@@ -58,7 +58,7 @@ export function PeriodCardsSkeleton() {
   );
 }
 
-function ChartSkeleton({ className }: { className?: string }) {
+export function ChartSkeleton({ className }: { className?: string }) {
   return (
     <Card className={cn(shell, "min-h-[380px] gap-4", className)}>
       <div className="flex items-center gap-2">

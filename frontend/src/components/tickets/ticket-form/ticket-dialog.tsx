@@ -144,6 +144,10 @@ function TicketForm({
     error: (field) =>
       serverErrors.fields[field] ?? (attempted || touched[field] ? clientErrors[field] : undefined),
     existingPdf,
+    // The authenticated download (never a public URL); only while it's still attached.
+    existingPdfPath: editing?.pdf_attachment_name
+      ? `/tickets/${editing.id}/attachment/`
+      : undefined,
     removeExistingPdf: () => {
       setExistingPdf(null);
       setDirty(true);

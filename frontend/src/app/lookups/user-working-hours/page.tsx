@@ -22,6 +22,7 @@ import { displayName, useAuth } from "@/lib/auth";
 import { EASE, markChoreographyStart } from "@/lib/motion";
 import { toPeriodSummary, userQuery } from "@/lib/working-hours";
 import { useApiGet } from "@/hooks/use-api";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { PeriodCardsSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { MotionRoot } from "@/components/dashboard/motion-root";
 import { PeriodCards } from "@/components/dashboard/period-cards";
@@ -309,18 +310,21 @@ function AdminView() {
         userId={selectedId}
         enabled={Boolean(selected)}
         header={(jobSheetLink) => (
-          <header className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">User Working Hours</h1>
-              <p className="text-label">
-                {selected
-                  ? `Logged hours for ${displayName(selected)}`
-                  : "Pick a team member to see their logged hours"}
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-3">
-              <UserPicker users={users.data} value={selectedId} onChange={setSelectedId} />
-              {jobSheetLink}
+          <header className="grid gap-3">
+            <Breadcrumb items={[{ label: "Lookups" }, { label: "User Working Hours" }]} />
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div>
+                <h1 className="text-2xl font-extrabold tracking-tight">User Working Hours</h1>
+                <p className="text-label">
+                  {selected
+                    ? `Logged hours for ${displayName(selected)}`
+                    : "Pick a team member to see their logged hours"}
+                </p>
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <UserPicker users={users.data} value={selectedId} onChange={setSelectedId} />
+                {jobSheetLink}
+              </div>
             </div>
           </header>
         )}
@@ -351,12 +355,15 @@ function StaffView() {
       userId={null}
       enabled
       header={(jobSheetLink) => (
-        <header className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Your Working Hours</h1>
-            <p className="text-label">Your logged AMS and Non-AMS hours against goal</p>
+        <header className="grid gap-3">
+          <Breadcrumb items={[{ label: "Lookups" }, { label: "User Working Hours" }]} />
+          <div className="flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-extrabold tracking-tight">Your Working Hours</h1>
+              <p className="text-label">Your logged AMS and Non-AMS hours against goal</p>
+            </div>
+            {jobSheetLink}
           </div>
-          {jobSheetLink}
         </header>
       )}
     />

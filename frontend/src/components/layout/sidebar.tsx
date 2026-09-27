@@ -469,6 +469,10 @@ const headerButton =
 
 export function Sidebar() {
   const pathname = usePathname();
+  const { user } = useAuth();
+  // Admin-only entries aren't offered to anyone else (the pages guard
+  // themselves too, and the API is the real authority).
+  const items = navItems.filter((item) => !item.adminOnly || user?.role === "admin");
   const collapsed = useSyncExternalStore(subscribe, getSnapshot, getServerSnapshot);
   const [animated, setAnimated] = useState(false);
   const fade = {
@@ -538,7 +542,7 @@ export function Sidebar() {
               aria-label="Main"
               className="flex flex-1 flex-col gap-1 overflow-x-hidden overflow-y-auto px-3 pb-4"
             >
-              {navItems.map((item) =>
+              {items.map((item) =>
                 item.children ? (
                   <GroupItem key={item.label} item={item} pathname={pathname} />
                 ) : (

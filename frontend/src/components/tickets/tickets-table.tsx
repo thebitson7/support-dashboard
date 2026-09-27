@@ -132,7 +132,8 @@ export function TicketsTableView({
       role="region"
       aria-label="AMS tickets table"
       tabIndex={0}
-      className="scrollbar-styled min-h-80 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+      // relative: clips absolutely positioned descendants (sr-only text) too; without it they leaked out and made the page scroll sideways.
+      className="scrollbar-styled relative min-h-80 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
     >
       <table
         aria-busy={loading || refreshing}

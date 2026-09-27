@@ -1,11 +1,15 @@
-"""Login rate limiting (DRF throttling; no extra dependency)."""
+"""
+Rate limits (DRF throttling; no extra dependency). Counters live in the
+default cache: per process locally, shared Redis in production (REDIS_URL).
+"""
 
 import hashlib
 import re
 from collections.abc import Mapping
 
 from django.conf import settings
-from rest_framework.throttling import SimpleRateThrottle
+from rest_framework.permissions import SAFE_METHODS
+from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
@@ -23,7 +27,20 @@ def client_ip(request) -> str:
     return remote
 
 
-class LoginRateThrottle(SimpleRateThrottle):
+class WindowRateMixin:
+    """Rates as DRF's "5/m", or with a window size, e.g. "5/5m", "30/2h"."""
+
+    def parse_rate(self, rate):
+        if rate is None:
+            return (None, None)
+        count, period = rate.split("/")
+        match = re.fullmatch(r"(\d*)([smhd])\w*", period.strip())
+        if not match:
+            raise ValueError(f"Invalid throttle rate: {rate!r}")
+        return int(count), int(match[1] or 1) * _UNIT_SECONDS[match[2]]
+
+
+class LoginRateThrottle(WindowRateMixin, SimpleRateThrottle):
     """
     N attempts per (username, client IP) per window. Keying on both means one
     attacker can't lock a user out from everywhere, and one IP can't spray
@@ -33,18 +50,32 @@ class LoginRateThrottle(SimpleRateThrottle):
 
     scope = "login"
 
-    def parse_rate(self, rate):
-        """DRF only understands "5/m"; this also accepts a window size, e.g. "5/5m"."""
-        if rate is None:
-            return (None, None)
-        count, period = rate.split("/")
-        match = re.fullmatch(r"(\d*)([smhd])\w*", period.strip())
-        if not match:
-            raise ValueError(f"Invalid throttle rate: {rate!r}")
-        return int(count), int(match[1] or 1) * _UNIT_SECONDS[match[2]]
-
     def get_cache_key(self, request, view):
         data = request.data if isinstance(request.data, Mapping) else {}
         username = str(data.get("username", "")).strip().lower()
         ident = hashlib.sha256(f"{username}\0{client_ip(request)}".encode()).hexdigest()
         return self.cache_format % {"scope": self.scope, "ident": ident}
+
+
+class ExportRateThrottle(WindowRateMixin, UserRateThrottle):
+    """
+    CSV exports per signed-in user (EXPORT_THROTTLE_RATE, default 30/h). Each
+    export reads every matching row, so repeating it is the cheapest way to
+    load the database; ordinary use is a handful an hour.
+    """
+
+    scope = "exports"
+
+
+class AdminWriteRateThrottle(WindowRateMixin, UserRateThrottle):
+    """
+    Administration writes (creating or editing users) per admin
+    (ADMIN_WRITE_THROTTLE_RATE, default 60/h). Reads aren't limited.
+    """
+
+    scope = "admin_writes"
+
+    def allow_request(self, request, view):
+        if request.method in SAFE_METHODS:
+            return True
+        return super().allow_request(request, view)

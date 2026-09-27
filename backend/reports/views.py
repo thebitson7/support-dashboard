@@ -15,6 +15,7 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.permissions import IsAdminRole
+from accounts.throttling import ExportRateThrottle
 from accounts.serializers import UserSummarySerializer
 from core.exports import csv_response, text_cell
 from working_hours.models import WorkLogEntry
@@ -149,6 +150,7 @@ class TeamActivityExportView(APIView):
     """
 
     permission_classes = [IsAuthenticated, IsAdminRole]
+    throttle_classes = [ExportRateThrottle]
     HEADER = ["User", "Date", "Start Time", "End Time", "Category", "Hours", "Minutes", "Source", "Note"]
 
     def get(self, request):

@@ -56,7 +56,12 @@ class WorkLogEntry(models.Model):
 
     class Meta:
         ordering = ["-date", "user", "start_time"]
-        indexes = [models.Index(fields=["user", "date"])]
+        indexes = [
+            # One person's days: summaries, Job Sheets, a report drill-down.
+            models.Index(fields=["user", "date"]),
+            # Everyone in a date range: the Team Activity overview and CSV.
+            models.Index(fields=["date"], name="work_log_date_idx"),
+        ]
         verbose_name_plural = "work log entries"
 
     def __str__(self):

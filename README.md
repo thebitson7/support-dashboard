@@ -92,6 +92,30 @@ With the backend running on port 8000 and the frontend on port 3000, open `http:
 
 The seed commands are for local development only and refuse to run with `DEBUG` off. AMS hours are never seeded: they come only from ticket activities that have a resolver. To (re)build those work-log entries from existing activities, e.g. after a data import, run `python manage.py sync_ticket_work_logs` (safe in any environment).
 
+## PostgreSQL (production database)
+
+Local development uses the SQLite file by default. To use PostgreSQL, set `DATABASE_URL` in `backend/.env`:
+
+```bash
+DATABASE_URL=postgres://support_dashboard:change-me@localhost:5432/support_dashboard
+# add ?sslmode=require for a managed database that expects TLS
+```
+
+Everything else works the same way against it: `python manage.py migrate`, the seed commands, `sync_ticket_work_logs`, and `python manage.py test` (Django creates and drops a separate `test_…` database, so the user needs `CREATEDB`). Connections are reused for 60 s and health-checked before reuse. The full migration history and test suite are verified against PostgreSQL 16.
+
+## Production checklist
+
+Backend (`backend/.env`, every setting documented in `.env.example`):
+
+- `DEBUG=False`, a real `SECRET_KEY`, `ALLOWED_HOSTS` covering every host Django is reached by, and `DATABASE_URL` (PostgreSQL).
+- `REDIS_URL` once there is more than one API process, so the rate limits (sign-in, CSV exports, Administration writes) are shared. Redis is then required.
+- `python manage.py collectstatic`: Django's own static files (the admin) are served by whitenoise from `backend/staticfiles/`.
+- HTTPS: if Django is only reached by the Next.js server over a private hop, set `SECURE_SSL_REDIRECT=False` (HTTPS is the frontend's job); behind a TLS proxy, set `TRUST_X_FORWARDED_PROTO=True`. Turn on HSTS (`SECURE_HSTS_SECONDS`, and `HSTS_MAX_AGE` on the frontend) only once HTTPS is confirmed everywhere.
+- Uploaded ticket PDFs live in `backend/media/`: keep it on persistent storage and in backups. They're served only through the authenticated `/api/tickets/<id>/attachment/`, never by URL.
+- Run it under a production WSGI server (e.g. gunicorn/uwsgi), not `runserver`.
+
+Frontend: `npm run build` then `npm run start`, with `DJANGO_API_URL` pointing at Django. Security headers (no sniffing, no framing, a strict referrer policy) are sent on every page; see `next.config.ts`.
+
 ## Backend app structure convention
 
 The Django project follows one app per domain area:

@@ -1,6 +1,6 @@
 # Project Status — Support Dashboard
 
-_Snapshot as of 2026-09-26, after the pre-production audit. Covers every commit through `c392914` plus the uncommitted Job Sheets, Reports and audit work in the working tree. Checked against the code, the full Django suite, `check --deploy`, `tsc`, `eslint` and `prettier`, and end-to-end runs through the real frontend and gateway._
+_Snapshot as of 2026-09-27, after the production-upgrade pass (PostgreSQL, security and performance hardening, Administration). Checked against the code, the full Django suite on **both SQLite and PostgreSQL 16**, `check --deploy`, `tsc`, `eslint`, `prettier`, a production `next build`, and headless-browser walkthroughs of every page (both roles, light and dark, 768–1440 px, keyboard only)._
 
 ---
 
@@ -14,7 +14,7 @@ The Support Dashboard is an internal tool for a support team. It covers:
 
 **Stack**
 - **Frontend:** Next.js 16 (App Router), React 19, TypeScript, Tailwind CSS v4, shadcn/ui on Base UI, TanStack Table v9, Recharts, Framer Motion, Sonner toasts.
-- **Backend:** Django 6.1, Django REST Framework, SQLite (dev; see gap #1).
+- **Backend:** Django 6.1, Django REST Framework. **PostgreSQL** in production via `DATABASE_URL` (SQLite when unset, for development); optional **Redis** (`REDIS_URL`) for shared rate limits; **whitenoise** for Django's static files.
 - **Auth:** SimpleJWT. The tokens live in httpOnly cookies owned by the Next.js server, which forwards calls to Django with a Bearer header. The browser never talks to Django directly.
 
 **Current state:** every data-backed feature is real:
@@ -24,7 +24,9 @@ The Support Dashboard is an internal tool for a support team. It covers:
 - **Job Sheets:** one person's day, auto AMS plus manual Non-AMS.
 - **Reports:** All Tickets and Team Activity, both with CSV export.
 
-The **Home dashboard** still runs on mock data. **Administration** is the only placeholder left. The backend suite has 218 tests, all passing. Typecheck, lint and formatting are clean, and the migration history applies cleanly to an empty database. It's ready for the data wipe and production prep, subject to the high-severity gaps in §4.2.
+- **Administration:** admin-only user management.
+
+Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 249 tests, all passing on SQLite **and** PostgreSQL 16. Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
 
 ---
 
@@ -60,7 +62,7 @@ The **Home dashboard** still runs on mock data. **Administration** is the only p
 
 **Decisions:**
 - `src/config/nav.ts` is the single source of truth for navigation.
-- **Every nav item is visible to every role** (gap #12).
+- **Admin-only items are hidden from staff** (`adminOnly` in `nav.ts`). Today that's Administration, which also guards itself and is refused by the API.
 
 ### 2.3 Home dashboard
 
@@ -80,8 +82,8 @@ The **Home dashboard** still runs on mock data. **Administration** is the only p
   - `src/proxy.ts` checks for a session before any page renders.
   - A client-side `AppShell` check is the second layer.
   - Django verifies every token on every call.
-- **Rate limiting:** 5 attempts per 5 minutes per (username + client IP), returning 429 with `Retry-After`. `X-Forwarded-For` is trusted only from `TRUSTED_PROXY_IPS`.
-- **Deactivation takes effect immediately:** sign-in, existing access tokens and refresh all stop working.
+- **Rate limiting:** sign-in allows 5 attempts per 5 minutes per (username + client IP), returning 429 with `Retry-After`; `X-Forwarded-For` is trusted only from `TRUSTED_PROXY_IPS`. CSV exports are limited to 30/h per user, and Administration writes to 60/h per admin. All rates are env-configurable, and the counters live in Redis when `REDIS_URL` is set.
+- **Deactivation takes effect immediately:** sign-in, existing access tokens and refresh all stop working. Deactivating someone, or resetting their password, also **revokes all their refresh tokens** (`accounts/sessions.py`), signing them out everywhere.
 - **Roles:** `User.role` is `staff` or `admin`, separate from Django's `is_staff`/`is_superuser` (which only open `/admin/`). Every user has a validated IANA `timezone`, defaulting to `Asia/Kuala_Lumpur`.
 - **Expiry is handled by the client.** An expired access token triggers **exactly one** refresh (single-flight) and a retry.
 - **Verified end to end in this audit** through the real frontend and gateway:
@@ -112,10 +114,10 @@ The **Home dashboard** still runs on mock data. **Administration** is the only p
 - **After every save, activities with a resolver are mirrored into work logs** (§2.8).
 - `created_by` is always the requester.
 - Deactivated users can't be newly assigned.
-- The PDF attachment is checked by its magic bytes and limited to 10 MB.
+- The PDF attachment is checked by its magic bytes and limited to 10 MB. **Downloads go only through `GET /api/tickets/<id>/attachment/`** (any signed-in user; `private, no-store`), offered as a Download button in the edit dialog. Nothing is served from `MEDIA_URL`, in development either.
 - **Any signed-in user may list, create and edit any ticket** (gap #5). There is no ticket delete (gap #8).
 - **Site and customer quick-add is admin-only,** matching Lookups. Staff get search plus an "ask an admin" hint.
-- **Date-times in the form use the browser's zone** (gap #19).
+- **Date-times in the form use the browser's zone** (gap #17).
 
 ### 2.7 Lookups (Sites, Customers, Countries, Work Done Codes, Holidays)
 
@@ -151,7 +153,7 @@ The **Home dashboard** still runs on mock data. **Administration** is the only p
   - Editing the ticket number refreshes the reference.
 - **Time rules:**
   - An auto entry sits on the activity's start date in the **resolver's** own zone.
-  - Past midnight it is clipped to 11:59 PM (gap #16); under a minute, it gets no entry.
+  - Past midnight it is clipped to 11:59 PM (gap #14); under a minute, it gets no entry.
   - Manual entries need an end time after the start time, can't be on a future date, and a day can't exceed 24 h across all entries.
 - **`seed_work_logs` now generates Non-AMS manual entries only** (fixed in this audit). It never touches auto entries.
 
@@ -179,6 +181,23 @@ Staff see only All Tickets, with no tab bar.
   - The team CSV has **Hours and Minutes** columns; Minutes is the one that adds up exactly.
   - The ticket CSV writes times in the browser's zone (`tz`), so it matches the screen.
 
+### 2.10 Administration (`/administration`, admin only)
+
+**What it does:** every account, active or not. Admins can search, sort, add, edit, deactivate or reactivate, and reset passwords.
+- **Staff never see it:** the nav item is hidden, the URL shows an "Admins only" state, and the API answers 403.
+
+**Decisions**
+- **API:** `GET/POST /api/accounts/admin/users/` and `GET/PATCH /api/accounts/admin/users/<id>/`. There's no PUT and no DELETE: people are deactivated, never deleted.
+- **Passwords are admin-set, checked by Django's validators** (at least 10 characters, not common, not all numbers, not similar to the name).
+  - A **Generate** button makes a strong one in the browser, with a cryptographic RNG, so **the server never returns a password**.
+  - A reset is confirmed separately and signs the person out everywhere.
+  - There's no forced change on first login yet (gap #9).
+- **Usernames** are unique case-insensitively and fixed once created.
+- **Self-lockout guard:** an admin can't remove their own admin role or deactivate themselves (400 with a clear message). The UI disables those controls with the reason.
+- **Roles:** choosing Admin shows what it grants. The app's admin role is separate from Django's `/admin/` flags (gap #21).
+
+**Files:** `accounts/` (`views.py`, `serializers.py`, `sessions.py`, `throttling.py`), `app/administration/page.tsx`, `components/administration/`.
+
 ---
 
 ## 3. Cross-cutting systems
@@ -200,6 +219,7 @@ Staff see only All Tickets, with no tab bar.
   | Reports: All Tickets + export | Allowed | Allowed |
   | Reports: Team Activity + export | Refused (403) | Allowed |
   | User search | Allowed (names/ids only) | Allowed |
+  | Administration (list / create / edit users) | Refused (403) | Allowed (can't demote or deactivate themselves) |
 
 - **Deactivated users (one rule everywhere, made consistent in this audit):**
   - They're left out of every picker and "everyone" view: the staff list, user search, the Team Activity overview.
@@ -216,6 +236,8 @@ Browser ──(same origin, httpOnly cookies)──▶ Next.js server ──(Bea
 ```
 
 - **Routes:** `/api/auth/{login,refresh,logout}` own the cookies. `/api/[...path]` forwards everything else, relaying the status, the raw body bytes, and only `Content-Type`, `Content-Disposition` and `Retry-After`.
+- **Downloads** (CSV exports, PDF attachments) go through `apiDownload()`, which shares the refresh-and-retry, so an expired access token never downloads an error instead of the file.
+- **Security headers** on every page from `next.config.ts`: `nosniff`, `X-Frame-Options: DENY`, `strict-origin-when-cross-origin`, a restrictive `Permissions-Policy`, and no `X-Powered-By`. HSTS is sent when `HSTS_MAX_AGE` is set.
 - **Gateway guards:**
   - It refuses `auth/token*` paths, so raw tokens can't leak to JS.
   - It rejects dot-segment and encoded-slash paths.
@@ -240,6 +262,10 @@ Browser ──(same origin, httpOnly cookies)──▶ Next.js server ──(Bea
   - Previous data stays visible while refetching.
   - `aria-busy` while loading.
   - Distinct "nothing yet" and "no matches" states.
+- **Breadcrumbs:** one shared `components/layout/breadcrumb.tsx` above every page title except Home's. Job Sheets and Working Hours didn't have one before.
+- **Row actions stay in view:** in the Lookups and Administration tables, the actions column is pinned to the right edge (`sticky right-0`), so Edit, Delete and Deactivate are reachable when a narrow screen scrolls the table sideways. Tickets keep theirs as the first column.
+- **Table scroll regions are `relative`,** so screen-reader-only text inside cells is clipped with the table. Before this, it leaked out and made the whole page scroll sideways on tablets.
+- **Popovers that hold a small form** (the date/time picker, ticket quick-add) trap focus (`modal="trap-focus"` plus a `PopoverClose` part), so Tab can't fall off the end of the page.
 - **Load errors use `LoadErrorPlaceholder` everywhere** (offline vs. the API's message, plus retry). Job Sheets was aligned to this in this audit.
 - **Shared cells** live in `components/tickets/cells.tsx`. `Dash` now gives screen readers real "No value" text; an `aria-label` on a plain span isn't reliably read, fixed here.
 - **Dialogs:**
@@ -260,95 +286,96 @@ Every entry has a stored calendar `date` plus local start and end times. All fou
 | Reports default range (current month) | The **viewer's** profile zone |
 | Auto-sync: which date an activity lands on | The **resolver's** profile zone, when synced |
 
-So an admin in Kuala Lumpur and a staff member in Malé can see a different "today" for the same entries. That's by design and documented in each API. The one real mismatch is the ticket form, which uses the browser's zone, not the profile's (gap #19).
+So an admin in Kuala Lumpur and a staff member in Malé can see a different "today" for the same entries. That's by design and documented in each API. The one real mismatch is the ticket form, which uses the browser's zone, not the profile's (gap #17).
 
 ---
 
 ## 4. Current state of quality
 
-### 4.1 Tests and checks (run 2026-09-26, after the audit)
+### 4.1 Tests and checks (run 2026-09-27, after the upgrade pass)
 
 | Check | Result |
 |---|---|
 | `python manage.py check` | No issues |
-| `python manage.py check --deploy` (DEBUG off) | 1 warning: W004 HSTS, deliberately opt-in at deploy time (gap #14) |
-| Migrations from scratch | 41 migrations apply cleanly to an empty DB; `working_hours` rolls back to zero and forward again; `makemigrations --check` is clean |
-| Backend `python manage.py test` | **218 tests, all pass** |
-| Frontend `npm run typecheck` / `lint` / `format:check` | All clean; no `any`, double casts or non-null assertions left |
-| Auth lifecycle through the real frontend + gateway | 19/19 checks (headless Chrome) |
+| `python manage.py check --deploy` (DEBUG off) | 1 warning, W004 HSTS, which is deliberately opt-in. **No issues** once HSTS is set as documented for go-live. |
+| Migrations | 42 migrations apply cleanly to an empty **SQLite** and an empty **PostgreSQL 16.2** database; `makemigrations --check` is clean |
+| Backend suite, SQLite | **249 tests, all pass** |
+| Backend suite, PostgreSQL 16.2 | **249 tests, all pass** (via `DATABASE_URL`) |
+| Frontend `typecheck` / `lint` / `format:check` | All clean |
+| Production `next build` | Succeeds; all 13 pages prerender |
+| Headless walkthroughs | Every page, both roles, light and dark, at 768 / 1024 / 1440 px: no page or content-area horizontal overflow; every keyboard focus stop visibly changes; all dialogs and popovers trap focus, close on Esc and return focus |
+| Auth lifecycle through the real frontend + gateway | 19/19 (previous pass) |
 
 **Backend tests by module:**
 - `working_hours`: 77 (`tests.py` 51, `test_auto_entries.py` 22, `test_commands.py` 4)
 - `tickets`: 58
+- `accounts`: 43 (`tests.py` 23, `test_administration.py` 20)
 - `lookups`: 30
 - `reports`: 24
-- `accounts`: 23
-- `core`: 6 (`tests.py` 2, `test_end_to_end.py` 4)
+- `core`: 17 (`tests.py` 2, `test_end_to_end.py` 4, `test_hardening.py` 11)
 
-**What they cover:**
-- Auth: tokens, blacklist, inactive users, rate limiting and IP spoofing.
-- Every permission path.
-- Ticket validation, totals, verification, multipart PDFs, and the list's filter/sort/search/paging.
-- Lookups' permissions, 409s and normalisation.
-- Working-hours entries: validation, the midnight rule, and the 24 h cap.
-- The auto-sync: create, update, resolver change, clear, delete, zones, clipping, and the backfill.
-- Reports: aggregation, ranges, deactivation, and both CSVs (escaping, BOM, formula guard, minutes).
-- The seed commands and the dev-only guard.
-- **Cross-layer end-to-end tests** (`core/test_end_to_end.py`): one ticket activity agrees across the ticket total, the Job Sheet, the Working Hours summary and Reports; manual entries are Non-AMS everywhere; deactivation; both CSVs against the database.
+**Coverage added in this pass:**
+- **Administration:** the full permission matrix; create, edit, deactivate, reactivate, role change and password reset (including session revocation); username uniqueness; weak passwords; the self-lockout guard; throttling.
+- **Downloads and throttles:** authenticated PDF downloads (and that `/media/` serves nothing); the export throttle.
+- **Configuration:** the `DATABASE_URL` parser.
+- **Query counts:** one constant-count check per list endpoint. A missing `select_related` fails the test.
+- **An explicit role-visibility test:** staff can't reach team activity, anyone else's hours or Job Sheet, the staff list, or any Administration endpoint.
 
-**Not covered:** there are no automated frontend tests and no CI (gap #4). The gateway, the auth route handlers and layout are verified manually and in headless-browser runs only.
+**Not covered:** there are still no automated frontend tests and no CI (gap #4). The gateway, the auth route handlers and layout are verified by headless-browser runs only.
 
 ### 4.2 Known gaps & deferred items
 
-Severity: **H** = must fix before real use, **M** = should fix soon, **L** = polish. Effort: S / M / L. The previous list was reconciled with this audit:
-- **Fixed and removed:** the old #9 (no way to edit older entries; Job Sheets now covers any day), #14 (README drift) and #15 (`.env.example` incomplete).
-- **Added:** #14–#23, marked _new_ below.
+Severity: **H** = must fix before real use, **M** = should fix soon, **L** = polish. Effort: S / M / L.
+
+Reconciled with this pass:
+- **Fixed and removed:** SQLite-only (PostgreSQL is now supported and verified); unauthenticated PDF serving (now an authenticated view); the per-process throttle cache (Redis is configurable); user management only in Django admin (Administration); every nav item shown to staff (Administration is now hidden from them).
+- **Added:** #9, #20–#24, marked _new_.
 
 | # | Item | Sev | Effort |
 |---|---|---|---|
-| 1 | **SQLite.** Move to PostgreSQL before real use. The ticket row lock and the duration aggregation are already written to work there. | H | M |
-| 2 | **Uploaded PDFs are served without auth, in DEBUG only** (`config/urls.py`). Production needs an authenticated download view, and none exists; there's also no download link in the UI. | H | M |
-| 3 | **The login throttle uses a per-process `LocMemCache`.** It needs a shared cache (Redis) once there is more than one API process. | M (H at scale) | S |
-| 4 | **No frontend tests and no CI.** At minimum, run the backend suite and typecheck/lint/format in CI; then add gateway/auth route tests. | M | M |
+| 1 | **Redis unverified against a real server.** Configuration and fallback are verified, but no Redis was available here. Verify in staging. Once `REDIS_URL` is set, Redis is required: if it's down, rate-limited endpoints, sign-in included, fail. | M | S |
+| 2 | **Uploaded PDFs on local disk** (`backend/media/`). They need persistent storage and backups in production, or object storage (S3 or similar) if the app runs on several machines. | M | S–M |
+| 3 | **HSTS is off until deploy.** Set `SECURE_HSTS_SECONDS` (Django) and `HSTS_MAX_AGE` (Next) once HTTPS is confirmed everywhere. | M (at deploy) | S |
+| 4 | **No frontend tests and no CI.** At minimum, run the backend suite and typecheck/lint/format/build in CI. | M | M |
 | 5 | **Ticket permissions are flat:** any signed-in user can edit or close any ticket. This was deliberate and is revisitable. | M | S–M |
 | 6 | **Refresh-token rotation is off,** by design for multi-tab use. | L | M |
-| 7 | **No optimistic concurrency on tickets:** concurrent edits are last-write-wins, with no warning. | L | M |
-| 8 | **No ticket deletion** (API or UI). Confirm this is intended. | L | S |
-| 9 | **User management exists only in Django admin:** roles, time zones, activation, passwords. This becomes Administration (§5). | M | M |
+| 7 | **No optimistic concurrency on tickets** (last write wins). | L | M |
+| 8 | **No ticket deletion.** Confirm this is intended. | L | S |
+| 9 | _new_ **No self-service password change, and no "must change on first login".** An admin sets the password and passes it on; the user can't change it themselves. This needs a change-password endpoint and page (plus an optional forced-change flag). | M | M |
 | 10 | **Holidays aren't used by anything:** goals ignore holidays and weekends. | M | M |
-| 11 | **The sidebar shows every page to every role,** including Administration to staff. | L | S |
-| 12 | **Email is unconfigured** (console in dev); no features send mail yet. | L | S |
-| 13 | **Hardcoded choice lists:** ticket type, channel and activity type are duplicated in `tickets/models.py` and `form-model.ts`. | L | S–M |
-| 14 | _new_ **HSTS is off until deploy.** Set `SECURE_HSTS_SECONDS` once HTTPS is confirmed everywhere; it's hard to undo. | M (at deploy) | S |
-| 15 | _new_ **Overlapping entries are accepted and counted twice:** for example, an auto entry and a manual entry covering the same minutes. Only the 24 h daily cap applies. | M | M |
-| 16 | _new_ **Auto entries are clipped at 11:59 PM:** an activity running past midnight in the resolver's zone loses the time after it on their work log (the ticket total keeps it), and a 1-minute activity at 11:59 PM gets no entry at all. This follows from "one entry per activity, entries never cross midnight". | L | M |
-| 17 | _new_ **Auto-entry dates are fixed at sync time:** changing someone's profile time zone only moves their existing auto entries after `sync_ticket_work_logs` is run. | L | S |
-| 18 | _new_ **Auto-entry hours come from the activity's times, not `duration_minutes`.** If an activity's duration was overridden explicitly (the API allows it; the UI doesn't), its work-log time and the ticket total can differ. | L | S |
-| 19 | _new_ **Browser zone vs. profile zone.** The ticket form enters times in the browser's zone, while work logs and summaries use the profile zone. For a user whose browser and profile zones differ, an activity entered as 9:00 appears at a different local time on their Job Sheet. | M | M |
-| 20 | _new_ **A deactivated user's Job Sheet can only be reached by URL:** pickers leave them out, the header can't name them, and "Log Hours" shows but the save is refused (404). Their history is readable (§3.1). | L | S |
-| 21 | _new_ **Team Activity covers staff only.** An admin's own resolved-ticket time isn't in the overview. This is by design; confirm. | L | S |
-| 22 | _new_ **The CSV formula guard also prefixes innocent text starting with `-` or `+`** (e.g. a note "-5 °C drift") with `'`. This is the standard safe trade-off. | L | S |
-| 23 | _new_ **The per-entry `hours` column is still rounded to 0.01 h.** It's only shown per entry now, since every total is exact minutes, but anything outside the app that sums it will drift. | L | S |
+| 11 | **Email is unconfigured;** no features send mail. | L | S |
+| 12 | **Hardcoded choice lists** (ticket type, channel, activity type) are duplicated between Django and the frontend. | L | S–M |
+| 13 | **Overlapping entries are accepted and counted twice** (auto + manual covering the same minutes). Only the 24 h daily cap applies. | M | M |
+| 14 | **Auto entries are clipped at 11:59 PM** in the resolver's zone, and a 1-minute activity at 11:59 PM gets no entry. | L | M |
+| 15 | **Auto-entry dates are fixed at sync time:** a time-zone change moves existing ones only after `sync_ticket_work_logs`. | L | S |
+| 16 | **Auto-entry hours come from the activity's times, not an explicit `duration_minutes` override** (API-only). | L | S |
+| 17 | **Browser zone vs. profile zone:** the ticket form uses the browser's zone, while work logs use the profile's. | M | M |
+| 18 | **A deactivated user's Job Sheet is reachable only by URL,** and its header can't name them. | L | S |
+| 19 | **Team Activity covers staff only** (admins' own resolved time isn't in it). By design; confirm. | L | S |
+| 20 | _new_ **No audit log of admin actions.** Who created, deactivated or promoted whom (and password resets) isn't recorded anywhere beyond `date_joined` / `last_login`. | M | M |
+| 21 | _new_ **The app's admin role and Django's `/admin/` access are separate.** Promoting someone in Administration doesn't give them the Django admin site (`is_staff`), and vice versa. This is intended, but worth knowing. | L | S |
+| 22 | _new_ **CSV formula guard** prefixes innocent text starting with `-` or `+` with `'` (the standard safe trade-off). | L | S |
+| 23 | _new_ **The per-entry `hours` column is rounded to 0.01 h.** Every total in the app uses exact minutes; only outside tools summing the column would drift. | L | S |
+| 24 | _new_ **The dev server didn't hot-reload the shared gateway module** (`src/lib/server/session.ts`). After server-side frontend changes, restart `npm run dev`. Development only. | L | S |
 
 ### 4.3 Real vs. mocked / hardcoded
 
 | Area | Status |
 |---|---|
-| Auth, roles, user search | Real |
-| AMS Tickets | Real |
+| Auth, roles, user search, Administration | Real |
+| AMS Tickets (including PDF download) | Real |
 | Lookups (5) | Real |
 | Working Hours, Job Sheets, the auto-sync | Real (goals are fixed constants) |
 | Reports (both tabs, both CSVs) | Real |
-| Ticket type / channel / activity-type lists | Hardcoded and duplicated (gap #13) |
+| Ticket type / channel / activity-type lists | Hardcoded and duplicated (gap #12) |
 | **Home dashboard** | **Mock** (`src/lib/mock-data.ts`, marked "Sample data") |
-| Administration | Placeholder |
 
 ---
 
 ## 5. What's NOT built yet
 
-- **Administration** (`/administration`, still "coming soon"): in-app user management (create/deactivate, role, time zone, password reset), replacing Django admin (gap #9). It should be admin-only in both the API and the nav (gap #11).
-- **Home dashboard, real data:** the UI is done, but its data is mock. Reports' endpoints and the exact-minute totals are the natural source for it.
+- **Home dashboard, real data:** the UI is done, but its data is mock. Reports' endpoints and the exact-minute totals (`working_hours/totals.py`) are the natural source for it.
+- **Self-service account settings:** changing one's own password and time zone (gap #9).
 
 ---
 
@@ -373,6 +400,7 @@ python manage.py seed_tickets_support_data   # countries, sites, customers, work
 python manage.py seed_work_logs              # ~90 days of manual Non-AMS hours per staff user (replaces manual entries)
 python manage.py runserver 8000
 ```
+- **PostgreSQL instead of SQLite:** set `DATABASE_URL=postgres://…` in `.env` (see `.env.example`). The commands above then run against it unchanged. The production checklist is in the README.
 - **AMS hours are never seeded:** they come from ticket activities with a resolver. Create tickets in the UI.
 - **After importing activities,** run `python manage.py sync_ticket_work_logs`. It's safe anywhere and rebuilds auto entries.
 - **Health check:** `curl http://localhost:8000/api/ping/`. Django admin is at `/admin/`.
@@ -402,6 +430,6 @@ All passwords are `password123`.
 
 ### Running the checks
 ```bash
-cd backend && python manage.py check && python manage.py test        # 218 tests
+cd backend && python manage.py check && python manage.py test        # 249 tests (add DATABASE_URL=… to run them on PostgreSQL)
 cd frontend && npm run typecheck && npm run lint && npm run format:check
 ```

@@ -1,10 +1,8 @@
 "use client";
 
 import { useEffect, useState, type ReactNode } from "react";
-import Link from "next/link";
 import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
-  ChevronRight,
   Eye,
   LoaderCircle,
   Pencil,
@@ -21,6 +19,7 @@ import { ApiError, apiDelete } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
 import { useApiGet } from "@/hooks/use-api";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { SortIcon } from "@/components/common/sort-icon";
 import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { Button } from "@/components/ui/button";
@@ -162,7 +161,8 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
         role="region"
         aria-label={`${config.title} table`}
         tabIndex={0}
-        className="scrollbar-styled min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
+        // relative: clips absolutely positioned descendants (sr-only text) too; without it they leaked out and made the page scroll sideways.
+        className="scrollbar-styled relative min-h-0 flex-1 overflow-auto outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-inset"
       >
         <table
           aria-busy={list.isLoading || list.isRefreshing}
@@ -219,7 +219,7 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
               {canManage && (
                 <th
                   scope="col"
-                  className="sticky top-0 z-10 w-24 border-b border-border bg-muted px-4 py-2 text-right text-[13px] font-semibold"
+                  className="sticky top-0 right-0 z-20 w-24 border-b border-border bg-muted px-4 py-2 text-right text-[13px] font-semibold"
                 >
                   <span className="sr-only">Actions</span>
                 </th>
@@ -251,7 +251,7 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
                   <tr
                     key={row.id}
                     className={cn(
-                      "transition-colors duration-150 hover:bg-foreground/5",
+                      "group transition-colors duration-150 hover:bg-foreground/5",
                       config.isDimmed?.(row) && "text-muted-foreground",
                     )}
                   >
@@ -268,7 +268,7 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
                       </td>
                     ))}
                     {canManage && (
-                      <td className="border-b border-border/60 px-2 py-1 text-right whitespace-nowrap">
+                      <td className="sticky right-0 border-b border-border/60 bg-card px-2 py-1 text-right whitespace-nowrap shadow-[-8px_0_8px_-8px_color-mix(in_oklab,var(--foreground)_18%,transparent)] transition-colors duration-150 group-hover:bg-[color-mix(in_oklab,var(--card),var(--foreground)_5%)]">
                         <Button
                           variant="ghost"
                           size="icon-sm"
@@ -314,28 +314,7 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
         className="mx-auto flex min-h-[30rem] w-full max-w-6xl flex-1 flex-col gap-5"
       >
         <div className="grid gap-3">
-          <nav aria-label="Breadcrumb">
-            <ol className="text-label flex items-center gap-1.5">
-              <li>
-                <Link
-                  href="/"
-                  className="rounded-sm transition-colors duration-150 hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring focus-visible:outline-none"
-                >
-                  Home
-                </Link>
-              </li>
-              <li aria-hidden className="flex">
-                <ChevronRight className="size-4" strokeWidth={2} />
-              </li>
-              <li>Lookups</li>
-              <li aria-hidden className="flex">
-                <ChevronRight className="size-4" strokeWidth={2} />
-              </li>
-              <li aria-current="page" className="font-semibold text-foreground">
-                {config.title}
-              </li>
-            </ol>
-          </nav>
+          <Breadcrumb items={[{ label: "Lookups" }, { label: config.title }]} />
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="text-2xl font-extrabold tracking-tight">{config.title}</h1>

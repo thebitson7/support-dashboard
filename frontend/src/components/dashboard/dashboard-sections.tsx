@@ -1,17 +1,25 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import dynamic from "next/dynamic";
 import { AnimatePresence, motion, useReducedMotion } from "framer-motion";
 
 import type { DashboardData } from "@/types/dashboard";
 import { markChoreographyStart } from "@/lib/motion";
 import { ActivityFeed } from "@/components/dashboard/activity-feed";
-import { DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
+import { ChartSkeleton, DashboardSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { KpiCards } from "@/components/dashboard/kpi-cards";
 import { PeriodCards } from "@/components/dashboard/period-cards";
 import { TicketStatusChart } from "@/components/dashboard/ticket-status-chart";
 import { TopSites } from "@/components/dashboard/top-sites";
-import { WeeklyHoursChart } from "@/components/dashboard/weekly-hours-chart";
+
+// The only user of Recharts (~114 KB gzipped): loaded on its own, after the
+// cards above it, instead of holding up the whole page. Same-shaped skeleton
+// meanwhile, so nothing shifts when it arrives.
+const WeeklyHoursChart = dynamic(
+  () => import("@/components/dashboard/weekly-hours-chart").then((m) => m.WeeklyHoursChart),
+  { ssr: false, loading: () => <ChartSkeleton className="@4xl:min-h-[438px]" /> },
+);
 
 // The simulated load only happens once per browser session: navigating away
 // and back shouldn't replay it. Real async data will replace this timer.

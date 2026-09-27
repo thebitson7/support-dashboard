@@ -24,6 +24,7 @@ import {
 } from "@/lib/local-datetime";
 import { WORK_CATEGORIES, entryMinutes, formatTimeRange } from "@/lib/working-hours";
 import { useApiGet } from "@/hooks/use-api";
+import { Breadcrumb } from "@/components/layout/breadcrumb";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import { StatePlaceholder } from "@/components/common/state-placeholder";
 import { DayEntries } from "@/components/job-sheets/day-entries";
@@ -176,25 +177,28 @@ function JobSheet({
 
   return (
     <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
-      <header className="flex flex-wrap items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-extrabold tracking-tight">Job Sheet</h1>
-          <p className="text-label">
-            {who
-              ? `${isAdmin ? `${who} · ` : ""}${formatDateLong(date)}`
-              : "Pick a team member to see their day"}
-          </p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3">
-          {isAdmin && (
-            <UserPicker users={users.data} value={userId} onChange={(id) => onUserChange(id)} />
-          )}
-          {canLog && (
-            <Button onClick={() => openLog(null)}>
-              <Plus aria-hidden />
-              Log Hours
-            </Button>
-          )}
+      <header className="grid gap-3">
+        <Breadcrumb items={[{ label: "Job Sheets" }]} />
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="text-2xl font-extrabold tracking-tight">Job Sheet</h1>
+            <p className="text-label">
+              {who
+                ? `${isAdmin ? `${who} · ` : ""}${formatDateLong(date)}`
+                : "Pick a team member to see their day"}
+            </p>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            {isAdmin && (
+              <UserPicker users={users.data} value={userId} onChange={(id) => onUserChange(id)} />
+            )}
+            {canLog && (
+              <Button onClick={() => openLog(null)}>
+                <Plus aria-hidden />
+                Log Hours
+              </Button>
+            )}
+          </div>
         </div>
       </header>
 

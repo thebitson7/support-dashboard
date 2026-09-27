@@ -2,9 +2,9 @@
 
 import { useId, useRef, useState, type ChangeEvent, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { FileText, LoaderCircle, Plus, Upload, X } from "lucide-react";
+import { Download, FileText, LoaderCircle, Plus, Upload, X } from "lucide-react";
 
-import { ApiError, apiPost } from "@/lib/api";
+import { ApiError, apiDownload, apiPost } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
 import {
@@ -19,7 +19,7 @@ import {
 import { SearchCombobox, type ComboOption } from "@/components/common/search-combobox";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
+import { Popover, PopoverClose, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Switch } from "@/components/ui/switch";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -48,6 +48,8 @@ export type FormBindings = {
   error: (field: FieldKey) => string | undefined;
   /** Edit mode: the file already attached to the ticket (null once removed). */
   existingPdf?: string | null;
+  /** Edit mode: where to download it from (the authenticated attachment endpoint). */
+  existingPdfPath?: string;
   removeExistingPdf?: () => void;
 };
 
@@ -99,9 +101,23 @@ function UserField({
 function PdfUpload({ form }: { form: FormBindings }) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [localError, setLocalError] = useState<string>();
+  const [downloading, setDownloading] = useState(false);
   const file = form.values.pdf_attachment;
   const existing = form.existingPdf ?? null;
   const error = localError ?? form.error("pdf_attachment");
+
+  const download = async () => {
+    if (!form.existingPdfPath || !existing) return;
+    setDownloading(true);
+    setLocalError(undefined);
+    try {
+      await apiDownload(form.existingPdfPath, existing);
+    } catch {
+      setLocalError("Couldn't download the attachment. Try again.");
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const choose = (picked: File | undefined) => {
     if (!picked) return;
@@ -144,6 +160,23 @@ function PdfUpload({ form }: { form: FormBindings }) {
             </p>
             <p className="text-caption">Currently attached</p>
           </div>
+          {form.existingPdfPath && (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              onClick={() => void download()}
+              disabled={downloading}
+              aria-label={`Download ${existing}`}
+            >
+              {downloading ? (
+                <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
+              ) : (
+                <Download aria-hidden />
+              )}
+              Download
+            </Button>
+          )}
           <Button type="button" variant="ghost" size="sm" onClick={() => inputRef.current?.click()}>
             Replace
           </Button>
@@ -270,6 +303,8 @@ function QuickAdd<T>({
   return (
     <Popover
       open={open}
+      // A small form: Tab stays inside it until Save, Cancel or Esc.
+      modal="trap-focus"
       onOpenChange={(next) => {
         setOpen(next);
         if (!next) reset();
@@ -324,9 +359,9 @@ function QuickAdd<T>({
             </p>
           )}
           <div className="flex justify-end gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={() => setOpen(false)}>
+            <PopoverClose render={<Button type="button" variant="ghost" size="sm" />}>
               Cancel
-            </Button>
+            </PopoverClose>
             <Button type="button" size="sm" onClick={() => void submit()} disabled={saving}>
               {saving && (
                 <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
