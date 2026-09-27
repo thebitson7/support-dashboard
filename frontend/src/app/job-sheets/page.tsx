@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 
+import type { AdminUser } from "@/types/administration";
 import type { StaffUser, WorkLogEntry } from "@/types/working-hours";
 import { ApiError, apiDelete } from "@/lib/api";
 import { displayName, useAuth, type AuthUser } from "@/lib/auth";
@@ -121,7 +122,15 @@ function JobSheet({
 }) {
   const dateLabelId = useId();
   const users = useApiGet<StaffUser[]>(isAdmin ? "/working-hours/users/" : null);
-  const selected = users.data?.find((u) => String(u.id) === userId);
+  const listed = users.data?.find((u) => String(u.id) === userId);
+  // Someone the picker doesn't list (deactivated, or an admin), reached by URL:
+  // look them up so the page can still name them.
+  const lookup = useApiGet<AdminUser>(
+    isAdmin && userId && users.data && !listed ? `/accounts/admin/users/${userId}/` : null,
+  );
+  const selected = listed ?? lookup.data;
+  // Their history stays readable, but nothing new can be logged for them (the API refuses it).
+  const deactivated = lookup.data?.is_active === false;
   const enabled = !isAdmin || userId !== null;
 
   const query = new URLSearchParams({ date });
@@ -139,7 +148,7 @@ function JobSheet({
 
   // Set only when an admin works on someone else's sheet: the dialogs then name them.
   const subjectName = isAdmin && selected ? displayName(selected) : undefined;
-  const canLog = enabled && !entries.error;
+  const canLog = enabled && !entries.error && !deactivated;
 
   const entryLabel = (entry: WorkLogEntry) =>
     `${formatMinutes(entryMinutes(entry))} ${
@@ -173,10 +182,14 @@ function JobSheet({
     }
   }
 
-  const who = isAdmin ? (selected ? displayName(selected) : null) : displayName(viewer);
+  const who = isAdmin
+    ? selected
+      ? `${displayName(selected)}${deactivated ? " (deactivated)" : ""}`
+      : null
+    : displayName(viewer);
 
   return (
-    <div className="mx-auto flex w-full max-w-5xl flex-col gap-5">
+    <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
       <header className="grid gap-3">
         <Breadcrumb items={[{ label: "Job Sheets" }]} />
         <div className="flex flex-wrap items-center justify-between gap-4">
@@ -193,8 +206,12 @@ function JobSheet({
               <UserPicker users={users.data} value={userId} onChange={(id) => onUserChange(id)} />
             )}
             {canLog && (
-              <Button onClick={() => openLog(null)}>
-                <Plus aria-hidden />
+              <Button
+                size="lg"
+                onClick={() => openLog(null)}
+                className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
+              >
+                <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
                 Log Hours
               </Button>
             )}

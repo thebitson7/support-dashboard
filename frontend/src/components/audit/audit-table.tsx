@@ -80,7 +80,7 @@ type Column = { id: string; header: string; sort?: SortColumn; col: string };
 const columnsFor = (grouped: boolean, wide: boolean): Column[] => [
   // Inside a day group only the time is shown, so the column can be narrower.
   { id: "when", header: "When", sort: "created_at", col: grouped ? "w-24" : "w-36" },
-  { id: "who", header: "Who", sort: "actor", col: "w-40" },
+  { id: "who", header: "Who", sort: "actor", col: "w-44" },
   { id: "action", header: "Action", sort: "action", col: "w-40" },
   { id: "event", header: "Event", col: "" },
   ...(wide ? [{ id: "target", header: "Target", sort: "target" as const, col: "w-52" }] : []),

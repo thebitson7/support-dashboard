@@ -196,6 +196,9 @@ SIMPLE_JWT = {
     # Next proxy), and rotation + blacklisting would log out whichever lost
     # the race. Logout still blacklists the refresh token explicitly.
     "ROTATE_REFRESH_TOKENS": False,
+    # Record each sign-in on the user (Administration's "Last sign-in" column);
+    # without this, only Django-admin logins set it.
+    "UPDATE_LAST_LOGIN": True,
 }
 
 # The Next.js server calls this API on the browser's behalf, so REMOTE_ADDR is
@@ -216,6 +219,9 @@ CACHES = {
             "BACKEND": "django.core.cache.backends.redis.RedisCache",
             "LOCATION": REDIS_URL,
             "KEY_PREFIX": "support-dashboard",
+            # Fail fast if Redis is unreachable (the rate limits then answer
+            # 503, see accounts/throttling.py) instead of hanging requests.
+            "OPTIONS": {"socket_connect_timeout": 2, "socket_timeout": 2},
         }
         if REDIS_URL
         else {"BACKEND": "django.core.cache.backends.locmem.LocMemCache"}

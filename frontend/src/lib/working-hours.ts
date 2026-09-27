@@ -1,6 +1,6 @@
 import type { PeriodSummary } from "@/types/dashboard";
 import type { ApiPeriod, WorkCategory, WorkLogEntry } from "@/types/working-hours";
-import { formatTimeDisplay, timeToMinutes } from "@/lib/local-datetime";
+import { formatDateDisplay, formatTimeDisplay, timeToMinutes } from "@/lib/local-datetime";
 
 /**
  * Minutes from start to end, or null unless both are times and the end is
@@ -42,18 +42,16 @@ function parseDay(iso: string): Date {
   return new Date(y, m - 1, d);
 }
 
-const dayFormat = new Intl.DateTimeFormat("en-US", {
-  weekday: "short",
-  month: "short",
-  day: "numeric",
-  year: "numeric",
-});
-const shortFormat = new Intl.DateTimeFormat("en-US", { month: "short", day: "numeric" });
+const weekday = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 
-/** "Thu, Sep 24, 2026" for one day, "Sep 21 – Sep 27" for a range (as on Home). */
+/**
+ * "Thu 24 Sep 2026" for one day, "21 Sep – 27 Sep" for a range: day-month
+ * order through the app's own formatter, as everywhere else (date pickers,
+ * Job Sheet, Audit Log).
+ */
 function formatRange(start: string, end: string): string {
-  if (start === end) return dayFormat.format(parseDay(start));
-  return `${shortFormat.format(parseDay(start))} – ${shortFormat.format(parseDay(end))}`;
+  if (start === end) return `${weekday.format(parseDay(start))} ${formatDateDisplay(start)}`;
+  return `${formatDateDisplay(start, { withYear: false })} – ${formatDateDisplay(end, { withYear: false })}`;
 }
 
 /**

@@ -5,12 +5,18 @@ default cache: per process locally, shared Redis in production (REDIS_URL).
 
 import hashlib
 import ipaddress
+import logging
 import re
 from collections.abc import Mapping
 
 from django.conf import settings
+from redis.exceptions import RedisError
+from rest_framework import status
+from rest_framework.exceptions import APIException
 from rest_framework.permissions import SAFE_METHODS
 from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
+
+logger = logging.getLogger(__name__)
 
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
@@ -38,8 +44,28 @@ def client_ip(request) -> str:
     return remote
 
 
+class RateLimitUnavailable(APIException):
+    status_code = status.HTTP_503_SERVICE_UNAVAILABLE
+    default_detail = "This is temporarily unavailable. Try again in a minute."
+    default_code = "rate_limit_unavailable"
+
+
 class WindowRateMixin:
-    """Rates as DRF's "5/m", or with a window size, e.g. "5/5m", "30/2h"."""
+    """
+    Rates as DRF's "5/m", or with a window size, e.g. "5/5m", "30/2h".
+
+    If the counters' cache (Redis, when REDIS_URL is set) can't be reached,
+    the limited endpoint fails closed, and clearly: a 503 with a plain
+    message, and one explicit line in the server log naming the cause. It
+    never fails open, since that would switch off brute-force protection.
+    """
+
+    def allow_request(self, request, view):
+        try:
+            return super().allow_request(request, view)
+        except RedisError as error:
+            logger.error("Rate limiting unavailable: the cache (Redis) can't be reached: %s", error)
+            raise RateLimitUnavailable() from error
 
     def parse_rate(self, rate):
         if rate is None:

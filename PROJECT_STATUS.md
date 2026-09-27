@@ -1,6 +1,6 @@
 # Project Status — Support Dashboard
 
-_Snapshot as of 2026-09-27, after the consolidation audit that followed Administration and the Audit Log. Checked against the code, the full Django suite (SQLite; PostgreSQL 16 in the upgrade pass), a fresh-database reachability sweep of every page's API, `check --deploy`, `tsc`, `eslint`, `prettier`, a production `next build`, and headless-browser walkthroughs of every page (both roles, light and dark, 768–1440 px, keyboard only)._
+_Snapshot as of 2026-09-27, after the final pre-deployment review. Checked against the code, the full Django suite on **both SQLite and PostgreSQL 16.2**, migrations + seeds + sync on a fresh PostgreSQL database, a fresh-database reachability sweep of every page's API, `check --deploy`, `tsc`, `eslint`, `prettier`, a production `next build`, and headless-browser walkthroughs of every page (both roles, light and dark, 768–1440 px, keyboard only)._
 
 ---
 
@@ -27,7 +27,7 @@ The Support Dashboard is an internal tool for a support team. It covers:
 - **Administration:** admin-only user management.
 - **Audit Log:** admin-only record of sign-ins, ticket, hours, lookup and account changes, with CSV export.
 
-Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 288 tests, all passing on SQLite (the previous 249 also on PostgreSQL 16). Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
+Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 292 tests, all passing on SQLite **and** PostgreSQL 16.2. Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
 
 ---
 
@@ -318,7 +318,7 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 
 ## 4. Current state of quality
 
-### 4.1 Tests and checks (run 2026-09-27, consolidation audit)
+### 4.1 Tests and checks (run 2026-09-27, final pre-deployment review)
 
 | Check | Result |
 |---|---|
@@ -326,8 +326,10 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 | `python manage.py check --deploy` (DEBUG off) | 1 warning, W004 HSTS, which is deliberately opt-in. **No issues** once HSTS is set as documented for go-live. |
 | Migrations | 43 migrations apply cleanly to an empty **SQLite** database (42 were also verified on **PostgreSQL 16.2** in the upgrade pass); `makemigrations --check` is clean; no model table missing; `check --deploy` now fails on any unapplied migration (`core.E001`) |
 | Fresh-database reachability | On that empty database, every page's data requests (Tickets, Lookups ×5, Working Hours, Job Sheets, Reports ×2, Administration, Audit Log, 25 endpoints) answer 2xx, both empty and with rows in every table |
-| Backend suite, SQLite | **288 tests, all pass** |
-| Backend suite, PostgreSQL 16.2 | **249 tests, all pass** in the upgrade pass (via `DATABASE_URL`). Not re-run after the Audit Log pass: that run was stopped by the machine running low on memory. |
+| Backend suite, SQLite | **292 tests, all pass** |
+| Backend suite, PostgreSQL 16.2 | **292 tests, all pass** (via `DATABASE_URL`, final pre-deployment review) |
+| Fresh PostgreSQL database | 43 migrations apply; `seed_users`, `seed_tickets_support_data`, `seed_work_logs` and `sync_ticket_work_logs` run clean (the sync is idempotent and rebuilds deleted auto entries); the dev-only seeds refuse to run with DEBUG off; the reachability sweep passes on PostgreSQL as well as SQLite |
+| Redis unreachable (measured) | Refused port and unroutable host both: sign-in, exports and admin writes answer 503 JSON in ~2 s, the log names Redis, everything else stays 200; `check --deploy` reports `core.E003` |
 | Frontend `typecheck` / `lint` / `format:check` | All clean |
 | Production `next build` | Succeeds; all 14 pages prerender |
 | Headless walkthroughs | Every page, both roles, light and dark, at 768 / 1024 / 1440 px: no page or content-area horizontal overflow; every keyboard focus stop visibly changes; all dialogs and popovers trap focus, close on Esc and return focus |
@@ -338,10 +340,10 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 **Backend tests by module:**
 - `working_hours`: 77 (`tests.py` 51, `test_auto_entries.py` 22, `test_commands.py` 4)
 - `tickets`: 58
-- `accounts`: 44 (`tests.py` 24, `test_administration.py` 20)
+- `accounts`: 45 (`tests.py` 25, `test_administration.py` 20)
 - `lookups`: 30
 - `reports`: 24
-- `core`: 19 (`tests.py` 4, `test_end_to_end.py` 4, `test_hardening.py` 11)
+- `core`: 22 (`tests.py` 7, `test_end_to_end.py` 4, `test_hardening.py` 11)
 - `audit`: 36 (`tests.py` 30, `test_flows.py` 6: real sign-in, then each walkthrough flow read back through the audit API and CSV)
 
 **Coverage added in the Audit Log pass:** every wired action's entry (description, actor, target, metadata); what's deliberately not logged; staff 403 on all three endpoints; every filter, ordering and bad-input 400; the CSV (headers, filename, formula guard, filters) and its throttle; a failing log write not breaking the action; the password never reaching any field; the prune command.
@@ -359,6 +361,12 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 
 Severity: **H** = must fix before real use, **M** = should fix soon, **L** = polish. Effort: S / M / L.
 
+Reconciled with the final pre-deployment review:
+- **Closed:** #1's code side (Redis now fails closed and clearly, with explicit 2 s timeouts and a deploy check; only verifying against a real Redis in staging remains) and #18 (a deactivated person's Job Sheet now names them, marked "(deactivated)", and hides Log Hours).
+- **Fixed, with causes:**
+  - **"Last sign-in" in Administration always said "Never".** SimpleJWT only records `last_login` with `UPDATE_LAST_LOGIN`, which was off, so only Django-admin logins set it. It's on now, with a test.
+  - **The frontend's `.env.local.example` was never in git.** `frontend/.gitignore`'s `.env*` matched it, so a fresh clone had no example to copy despite the README's instructions. It's now excluded from that rule.
+
 Reconciled with the consolidation audit:
 - **Fixed and removed:** #20 (there is now an audit log of admin actions, and of everything else).
 - **Fixed, with causes:**
@@ -374,7 +382,7 @@ Reconciled with the upgrade pass:
 
 | # | Item | Sev | Effort |
 |---|---|---|---|
-| 1 | **Redis unverified against a real server.** Configuration and fallback are verified, but no Redis was available here. Verify in staging. Once `REDIS_URL` is set, Redis is required: if it's down, rate-limited endpoints, sign-in included, fail. | M | S |
+| 1 | **Redis unverified against a real server** (no Redis was available here). The failure mode is handled and measured (503 in ~2 s, log names Redis, `check --deploy` fails with `core.E003`); verify the happy path in staging. Once `REDIS_URL` is set, Redis is required: if it's down, rate-limited endpoints, sign-in included, fail. | M | S |
 | 2 | **Uploaded PDFs on local disk** (`backend/media/`). They need persistent storage and backups in production, or object storage (S3 or similar) if the app runs on several machines. | M | S–M |
 | 3 | **HSTS is off until deploy.** Set `SECURE_HSTS_SECONDS` (Django) and `HSTS_MAX_AGE` (Next) once HTTPS is confirmed everywhere. | M (at deploy) | S |
 | 4 | **No frontend tests and no CI.** At minimum, run the backend suite and typecheck/lint/format/build in CI. | M | M |
@@ -391,7 +399,7 @@ Reconciled with the upgrade pass:
 | 15 | **Auto-entry dates are fixed at sync time:** a time-zone change moves existing ones only after `sync_ticket_work_logs`. | L | S |
 | 16 | **Auto-entry hours come from the activity's times, not an explicit `duration_minutes` override** (API-only). | L | S |
 | 17 | **Browser zone vs. profile zone:** the ticket form uses the browser's zone, while work logs use the profile's. | M | M |
-| 18 | **A deactivated user's Job Sheet is reachable only by URL,** and its header can't name them. | L | S |
+| 18 | **A deactivated user's Job Sheet is reachable only by URL** (they're left out of the picker, like everywhere else). It now names them, marked "(deactivated)". | L | S |
 | 19 | **Team Activity covers staff only** (admins' own resolved time isn't in it). By design; confirm. | L | S |
 | 21 | _new_ **The app's admin role and Django's `/admin/` access are separate.** Promoting someone in Administration doesn't give them the Django admin site (`is_staff`), and vice versa. This is intended, but worth knowing. | L | S |
 | 22 | _new_ **CSV formula guard** prefixes innocent text starting with `-` or `+` with `'` (the standard safe trade-off). | L | S |

@@ -108,13 +108,13 @@ Everything else works the same way against it: `python manage.py migrate`, the s
 Backend (`backend/.env`, every setting documented in `.env.example`):
 
 - `DEBUG=False`, a real `SECRET_KEY`, `ALLOWED_HOSTS` covering every host Django is reached by, and `DATABASE_URL` (PostgreSQL).
-- `REDIS_URL` once there is more than one API process, so the rate limits (sign-in, CSV exports, Administration writes) are shared. Redis is then required.
+- `REDIS_URL` once there is more than one API process, so the rate limits (sign-in, CSV exports, Administration writes) are shared. Redis is then required: if it's unreachable those endpoints answer 503 ("temporarily unavailable") within about 2 s and the server log names Redis. They fail closed, never open, so brute-force protection is never switched off; everything else keeps working.
 - `python manage.py collectstatic`: Django's own static files (the admin) are served by whitenoise from `backend/staticfiles/`.
 - HTTPS: if Django is only reached by the Next.js server over a private hop, set `SECURE_SSL_REDIRECT=False` (HTTPS is the frontend's job); behind a TLS proxy, set `TRUST_X_FORWARDED_PROTO=True`. Turn on HSTS (`SECURE_HSTS_SECONDS`, and `HSTS_MAX_AGE` on the frontend) only once HTTPS is confirmed everywhere.
 - Uploaded ticket PDFs live in `backend/media/`: keep it on persistent storage and in backups. They're served only through the authenticated `/api/tickets/<id>/attachment/`, never by URL.
 - Run it under a production WSGI server (e.g. gunicorn/uwsgi), not `runserver`.
 - Put the Next.js server behind a reverse proxy that appends `X-Forwarded-For` (nginx, a load balancer). Next only fills that header when it's missing, so when exposed directly a client could claim any IP for the sign-in limit and the audit log.
-- Run `python manage.py check --deploy` as part of every release: it fails if any migration hasn't been applied (`core.E001`).
+- Run `python manage.py check --deploy` as part of every release: it fails if any migration hasn't been applied (`core.E001`), or if `REDIS_URL` is set but Redis can't be reached (`core.E003`).
 - The audit log grows without limit by design. If a retention policy is agreed, prune by hand or on a schedule you choose: `python manage.py prune_audit_logs --older-than-days=730 --dry-run` (drop `--dry-run` to delete).
 
 Frontend: `npm run build` then `npm run start`, with `DJANGO_API_URL` pointing at Django. Security headers (no sniffing, no framing, a strict referrer policy) are sent on every page; see `next.config.ts`.

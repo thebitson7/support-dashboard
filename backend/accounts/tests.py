@@ -46,6 +46,13 @@ class TokenAuthTests(AuthTestCase):
             ["rest_framework.permissions.IsAuthenticated"],
         )
 
+    def test_signing_in_records_last_login(self):
+        user = get_user_model().objects.get(username="agent")
+        self.assertIsNone(user.last_login)
+        self.assertEqual(self.login().status_code, 200)
+        user.refresh_from_db()
+        self.assertIsNotNone(user.last_login)
+
     def test_me_returns_the_token_owner(self):
         access = self.login().json()["access"]
         response = self.client.get(ME_URL, HTTP_AUTHORIZATION=f"Bearer {access}")

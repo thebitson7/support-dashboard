@@ -37,6 +37,7 @@ function describeError(error: unknown): string {
     if (error.status === 0 || error.status === 502) {
       return "Couldn't reach the server. Check your connection and try again.";
     }
+    if (error.status === 503) return "Sign-in is temporarily unavailable. Try again in a minute.";
   }
   return "Something went wrong while signing in. Please try again.";
 }

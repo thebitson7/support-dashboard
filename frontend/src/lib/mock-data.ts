@@ -29,7 +29,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "today",
     label: "Today",
-    dateRange: "Thu, Sep 24, 2026",
+    dateRange: "Thu 24 Sep 2026",
     goalMinutes: mins(8),
     amsMinutes: mins(4, 30),
     nonAmsMinutes: mins(1, 45),
@@ -37,7 +37,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "yesterday",
     label: "Yesterday",
-    dateRange: "Wed, Sep 23, 2026",
+    dateRange: "Wed 23 Sep 2026",
     goalMinutes: mins(8),
     amsMinutes: mins(4, 55),
     nonAmsMinutes: mins(2, 50),
@@ -45,7 +45,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "currentWeek",
     label: "Current Week",
-    dateRange: "Sep 21 – Sep 27",
+    dateRange: "21 Sep – 27 Sep",
     goalMinutes: mins(40),
     amsMinutes: mins(18, 20),
     nonAmsMinutes: mins(11, 10),
@@ -53,7 +53,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "lastWeek",
     label: "Last Week",
-    dateRange: "Sep 14 – Sep 20",
+    dateRange: "14 Sep – 20 Sep",
     goalMinutes: mins(40),
     amsMinutes: mins(25, 40),
     nonAmsMinutes: mins(15, 30),
@@ -61,7 +61,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "currentMonth",
     label: "Current Month",
-    dateRange: "Sep 1 – Sep 30",
+    dateRange: "1 Sep – 30 Sep",
     goalMinutes: mins(176),
     amsMinutes: mins(76, 15),
     nonAmsMinutes: mins(45, 25),
@@ -69,7 +69,7 @@ const periods: PeriodSummary[] = [
   period({
     key: "previousMonth",
     label: "Previous Month",
-    dateRange: "Aug 1 – Aug 31",
+    dateRange: "1 Aug – 31 Aug",
     goalMinutes: mins(168),
     amsMinutes: mins(104, 10),
     nonAmsMinutes: mins(60, 20),
@@ -85,14 +85,14 @@ const ticketsByStatus: TicketStatusCount[] = [
 
 // Last 8 weeks; the final point is the current, still-running week.
 const weeklyHours: WeeklyHoursPoint[] = [
-  { week: "Aug 3", hours: 38.5 },
-  { week: "Aug 10", hours: 41 },
-  { week: "Aug 17", hours: 36.2 },
-  { week: "Aug 24", hours: 43.5 },
-  { week: "Aug 31", hours: 39.8 },
-  { week: "Sep 7", hours: 40.6 },
-  { week: "Sep 14", hours: 41.2 },
-  { week: "Sep 21", hours: 29.5 },
+  { week: "3 Aug", hours: 38.5 },
+  { week: "10 Aug", hours: 41 },
+  { week: "17 Aug", hours: 36.2 },
+  { week: "24 Aug", hours: 43.5 },
+  { week: "31 Aug", hours: 39.8 },
+  { week: "7 Sep", hours: 40.6 },
+  { week: "14 Sep", hours: 41.2 },
+  { week: "21 Sep", hours: 29.5 },
 ];
 
 const activity: ActivityItem[] = [

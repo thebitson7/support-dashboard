@@ -3,6 +3,7 @@
 // keeps the server's full wording.
 
 import type { AuditEntry } from "@/types/audit";
+import { formatDateDisplay, isoToLocal } from "@/lib/local-datetime";
 
 /**
  * What kind of change an action is, so badges read by meaning rather than by
@@ -48,12 +49,7 @@ export const TONE_TOKEN: Record<Tone, string> = {
 export const toneOf = (action: string): Tone => TONES[action] ?? "neutral";
 
 const TIME_FMT = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
-const SHORT_DAY_FMT = new Intl.DateTimeFormat("en-GB", { day: "numeric", month: "short" });
-const DAY_FMT = new Intl.DateTimeFormat("en-GB", {
-  weekday: "short",
-  day: "numeric",
-  month: "short",
-});
+const WEEKDAY_FMT = new Intl.DateTimeFormat("en-GB", { weekday: "short" });
 const FULL_FMT = new Intl.DateTimeFormat("en-GB", {
   weekday: "long",
   day: "numeric",
@@ -67,15 +63,16 @@ const FULL_FMT = new Intl.DateTimeFormat("en-GB", {
 });
 
 const sameYear = (d: Date) => d.getFullYear() === new Date().getFullYear();
-const withYear = (d: Date, text: string) => (sameYear(d) ? text : `${text} ${d.getFullYear()}`);
+/** "27 Sep" this year, "27 Sep 2025" otherwise, via the app's shared formatter. */
+const shortDay = (iso: string) =>
+  formatDateDisplay(isoToLocal(iso).slice(0, 10), { withYear: !sameYear(new Date(iso)) });
 
 /** "5:40 PM" (inside a day group). */
 export const formatTime = (iso: string) => TIME_FMT.format(new Date(iso));
 
 /** "27 Sep, 5:40 PM" (when the rows aren't grouped by day). */
 export function formatStamp(iso: string) {
-  const d = new Date(iso);
-  return `${withYear(d, SHORT_DAY_FMT.format(d))}, ${TIME_FMT.format(d)}`;
+  return `${shortDay(iso)}, ${TIME_FMT.format(new Date(iso))}`;
 }
 
 /** "Sunday 27 September 2026, 5:40:12 pm GMT+8", for tooltips and the details panel. */
@@ -94,7 +91,7 @@ export function dayLabel(iso: string) {
   const yesterday = new Date(today.getFullYear(), today.getMonth(), today.getDate() - 1);
   if (dayKey(iso) === dayKey(today.toISOString())) return "Today";
   if (dayKey(iso) === dayKey(yesterday.toISOString())) return "Yesterday";
-  return withYear(d, DAY_FMT.format(d));
+  return `${WEEKDAY_FMT.format(d)} ${shortDay(iso)}`;
 }
 
 /**

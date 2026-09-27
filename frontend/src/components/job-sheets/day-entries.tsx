@@ -123,7 +123,7 @@ export function DayEntries({
           {canLog && (
             <Button variant="outline" size="sm" onClick={onAdd}>
               <Plus aria-hidden />
-              Log hours
+              Log Hours
             </Button>
           )}
         </div>

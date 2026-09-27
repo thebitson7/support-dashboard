@@ -113,7 +113,7 @@ export function LogHoursDialog({
   const touch = (name: FieldName) => setTouched((t) => (t[name] ? t : { ...t, [name]: true }));
 
   const forSomeoneElse = Boolean(subjectName);
-  const title = `${entry ? "Edit entry" : "Log hours"}${forSomeoneElse ? ` for ${subjectName}` : ""}`;
+  const title = `${entry ? "Edit Entry" : "Log Hours"}${forSomeoneElse ? ` for ${subjectName}` : ""}`;
   const description = forSomeoneElse
     ? `This changes ${subjectName}'s working hours, not yours.`
     : entry
