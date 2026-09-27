@@ -17,6 +17,7 @@ urlpatterns = [
     path("api/tickets/", include("tickets.urls")),
     path("api/lookups/", include("lookups.urls")),
     path("api/reports/", include("reports.urls")),
+    path("api/audit/", include("audit.urls")),
 ]
 
 # Uploaded files (ticket PDFs) are never served by URL, in development either:

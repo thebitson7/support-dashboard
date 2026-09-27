@@ -121,6 +121,7 @@ INSTALLED_APPS = [
     "tickets",
     "lookups",
     "reports",
+    "audit",
 ]
 
 AUTH_USER_MODEL = "accounts.User"

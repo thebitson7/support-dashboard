@@ -6,6 +6,7 @@ import {
   Clock,
   FileText,
   Globe,
+  History,
   Home,
   MapPin,
   Search,
@@ -49,4 +50,5 @@ export const navItems: NavItem[] = [
   { label: "Reports", href: "/reports", icon: BarChart3 },
   { label: "Job Sheets", href: "/job-sheets", icon: FileText },
   { label: "Administration", href: "/administration", icon: Shield, adminOnly: true },
+  { label: "Audit Log", href: "/audit-log", icon: History, adminOnly: true },
 ];

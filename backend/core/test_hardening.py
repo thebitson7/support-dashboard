@@ -16,6 +16,8 @@ from rest_framework.test import APITestCase
 from rest_framework.throttling import SimpleRateThrottle
 
 from accounts.models import User
+from audit.log import log_action
+from audit.models import AuditLogEntry
 from config.settings import database_from_url
 from tickets.models import Country, Customer, Holiday, Site, Ticket, TicketActivity, WorkDoneCode
 from working_hours.models import WorkLogEntry
@@ -172,6 +174,8 @@ class QueryCountTests(Fixtures):
             )
             Site.objects.create(name=f"Site {i}", ocn=f"OCN-{i}-{Site.objects.count()}", country=my)
             Holiday.objects.create(name=f"H{i}-{Holiday.objects.count()}", date=date(2026, 1, 1 + i % 28), country=my)
+            for actor in (self.staff, self.other):
+                log_action(actor, AuditLogEntry.Action.TICKET_CREATED, target=ticket, description=f"created {ticket.pk}")
 
     def count(self, path, params=None):
         from django.db import connection
@@ -194,6 +198,8 @@ class QueryCountTests(Fixtures):
             ("/api/lookups/sites/", {}),
             ("/api/lookups/holidays/", {}),
             ("/api/accounts/admin/users/", {}),
+            ("/api/audit/logs/", {"page_size": 200}),
+            ("/api/audit/logs/export/", {}),
         ]
         self.grow(2)
         few = [self.count(path, params) for path, params in paths]
@@ -243,6 +249,9 @@ class RoleVisibilityTests(Fixtures):
             "administration edit": self.client.patch(
                 f"/api/accounts/admin/users/{self.staff.pk}/", {"role": "admin"}, format="json"
             ),
+            "audit log": self.client.get("/api/audit/logs/"),
+            "audit log CSV": self.client.get("/api/audit/logs/export/"),
+            "audit actions": self.client.get("/api/audit/logs/actions/"),
         }
         self.assertEqual({k: r.status_code for k, r in refused.items()}, dict.fromkeys(refused, 403))
         # Their own data is fine.
@@ -253,6 +262,12 @@ class RoleVisibilityTests(Fixtures):
 
     def test_admins_can(self):
         self.client.force_authenticate(self.admin)
-        for path in ("/api/reports/team-activity/", "/api/accounts/admin/users/", "/api/working-hours/users/"):
+        for path in (
+            "/api/reports/team-activity/",
+            "/api/accounts/admin/users/",
+            "/api/working-hours/users/",
+            "/api/audit/logs/",
+            "/api/audit/logs/actions/",
+        ):
             with self.subTest(path=path):
                 self.assertEqual(self.client.get(path).status_code, 200)

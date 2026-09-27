@@ -113,6 +113,9 @@ Backend (`backend/.env`, every setting documented in `.env.example`):
 - HTTPS: if Django is only reached by the Next.js server over a private hop, set `SECURE_SSL_REDIRECT=False` (HTTPS is the frontend's job); behind a TLS proxy, set `TRUST_X_FORWARDED_PROTO=True`. Turn on HSTS (`SECURE_HSTS_SECONDS`, and `HSTS_MAX_AGE` on the frontend) only once HTTPS is confirmed everywhere.
 - Uploaded ticket PDFs live in `backend/media/`: keep it on persistent storage and in backups. They're served only through the authenticated `/api/tickets/<id>/attachment/`, never by URL.
 - Run it under a production WSGI server (e.g. gunicorn/uwsgi), not `runserver`.
+- Put the Next.js server behind a reverse proxy that appends `X-Forwarded-For` (nginx, a load balancer). Next only fills that header when it's missing, so when exposed directly a client could claim any IP for the sign-in limit and the audit log.
+- Run `python manage.py check --deploy` as part of every release: it fails if any migration hasn't been applied (`core.E001`).
+- The audit log grows without limit by design. If a retention policy is agreed, prune by hand or on a schedule you choose: `python manage.py prune_audit_logs --older-than-days=730 --dry-run` (drop `--dry-run` to delete).
 
 Frontend: `npm run build` then `npm run start`, with `DJANGO_API_URL` pointing at Django. Security headers (no sniffing, no framing, a strict referrer policy) are sent on every page; see `next.config.ts`.
 
@@ -126,6 +129,7 @@ The Django project follows one app per domain area:
 - `lookups` — the management API for that reference data.
 - `working_hours` — work-log entries (manual Non-AMS, and AMS mirrored from ticket activities), period summaries, Job Sheet data.
 - `reports` — read-only, report-shaped views (team activity) over the other apps' data.
+- `audit` — the audit log: one `log_action()` writer called from the other apps, the admin-only list/export API, and the `prune_audit_logs` command.
 
 Each app owns its own `urls.py`, included from `config/urls.py` under `/api/<app-name>/` (accounts' auth endpoints are the one exception, mounted at `/api/auth/` since `POST /api/auth/token/` reads better than `/api/accounts/token/`). Models, serializers, and views for a domain area live inside that app — avoid putting unrelated logic in `core`.
 

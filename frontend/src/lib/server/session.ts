@@ -2,7 +2,11 @@
 // browser holds them as httpOnly cookies it can send but never read, and this
 // layer turns them into `Authorization: Bearer` headers for Django.
 
+import { isIP } from "node:net";
+
 import { NextResponse, type NextRequest } from "next/server";
+
+import { genericErrorMessage, isJsonContentType } from "@/lib/http-errors";
 
 /** Django is only ever called server-side, so its URL is not public config. */
 export const DJANGO_API_URL = process.env.DJANGO_API_URL ?? "http://127.0.0.1:8000/api";
@@ -102,7 +106,29 @@ export async function callDjango(
  * browser, nothing else. The body is passed through as bytes: decoding it as
  * text would drop a CSV's UTF-8 byte-order mark, which Excel relies on.
  */
+/**
+ * The browser's address, for Django's sign-in throttle and audit log: the
+ * right-most X-Forwarded-For entry (the one the nearest proxy added; Next.js
+ * fills it with the socket address when no proxy sent one), and only if it's
+ * a well-formed IP. Anything else is dropped rather than passed on.
+ */
+export function clientAddress(request: NextRequest): string | null {
+  const last = request.headers.get("x-forwarded-for")?.split(",").pop()?.trim() ?? "";
+  return isIP(last) ? last : null;
+}
+
 export async function relay(upstream: Response): Promise<NextResponse> {
+  // An error that isn't the API's JSON (Django's DEBUG traceback, with
+  // settings and paths in it; an HTML 404/500 page) never leaves this server:
+  // the browser gets a generic JSON error instead.
+  if (!upstream.ok && !isJsonContentType(upstream.headers.get("content-type"))) {
+    await upstream.body?.cancel().catch(() => {});
+    console.warn(`[gateway] replaced a non-JSON ${upstream.status} error from the API`);
+    const response = jsonError(upstream.status, genericErrorMessage(upstream.status));
+    const retryAfter = upstream.headers.get("retry-after");
+    if (retryAfter) response.headers.set("retry-after", retryAfter);
+    return response;
+  }
   const body = upstream.status === 204 ? null : await upstream.arrayBuffer();
   const headers = new Headers();
   // Content-Disposition: a CSV export's "attachment; filename=…".

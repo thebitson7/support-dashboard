@@ -1,6 +1,13 @@
 import type { NextRequest } from "next/server";
 
-import { ACCESS_COOKIE, callDjango, isCrossOrigin, jsonError, relay } from "@/lib/server/session";
+import {
+  ACCESS_COOKIE,
+  callDjango,
+  clientAddress,
+  isCrossOrigin,
+  jsonError,
+  relay,
+} from "@/lib/server/session";
 
 /** Upload ceiling (Django allows 10 MB PDFs; this leaves room for the other fields). */
 const MAX_BODY_BYTES = 12 * 1024 * 1024;
@@ -42,6 +49,8 @@ async function forward(request: NextRequest, ctx: RouteContext<"/api/[...path]">
     access: request.cookies.get(ACCESS_COOKIE)?.value,
     body: body && body.byteLength > 0 ? body : undefined,
     headers: contentType ? { "Content-Type": contentType } : undefined,
+    // For the audit log's IP column (Django trusts it only from this server).
+    forwardedFor: clientAddress(request),
   });
   return relay(upstream);
 }

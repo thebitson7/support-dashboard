@@ -1,6 +1,6 @@
 # Project Status — Support Dashboard
 
-_Snapshot as of 2026-09-27, after the production-upgrade pass (PostgreSQL, security and performance hardening, Administration). Checked against the code, the full Django suite on **both SQLite and PostgreSQL 16**, `check --deploy`, `tsc`, `eslint`, `prettier`, a production `next build`, and headless-browser walkthroughs of every page (both roles, light and dark, 768–1440 px, keyboard only)._
+_Snapshot as of 2026-09-27, after the consolidation audit that followed Administration and the Audit Log. Checked against the code, the full Django suite (SQLite; PostgreSQL 16 in the upgrade pass), a fresh-database reachability sweep of every page's API, `check --deploy`, `tsc`, `eslint`, `prettier`, a production `next build`, and headless-browser walkthroughs of every page (both roles, light and dark, 768–1440 px, keyboard only)._
 
 ---
 
@@ -25,8 +25,9 @@ The Support Dashboard is an internal tool for a support team. It covers:
 - **Reports:** All Tickets and Team Activity, both with CSV export.
 
 - **Administration:** admin-only user management.
+- **Audit Log:** admin-only record of sign-ins, ticket, hours, lookup and account changes, with CSV export.
 
-Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 249 tests, all passing on SQLite **and** PostgreSQL 16. Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
+Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 288 tests, all passing on SQLite (the previous 249 also on PostgreSQL 16). Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
 
 ---
 
@@ -62,7 +63,7 @@ Only the **Home dashboard** still runs on mock data; no placeholders are left. T
 
 **Decisions:**
 - `src/config/nav.ts` is the single source of truth for navigation.
-- **Admin-only items are hidden from staff** (`adminOnly` in `nav.ts`). Today that's Administration, which also guards itself and is refused by the API.
+- **Admin-only items are hidden from staff** (`adminOnly` in `nav.ts`). Today that's Administration and Audit Log, which also guard themselves and is refused by the API.
 
 ### 2.3 Home dashboard
 
@@ -198,6 +199,24 @@ Staff see only All Tickets, with no tab bar.
 
 **Files:** `accounts/` (`views.py`, `serializers.py`, `sessions.py`, `throttling.py`), `app/administration/page.tsx`, `components/administration/`.
 
+### 2.11 Audit Log (`/audit-log`, admin only)
+
+**What it does:** a chronological, human-readable record of who did what. It covers sign-ins (successful and failed) and sign-outs; ticket create / edit / close / reopen and activities added or removed; manual hours logged, edited or deleted; lookup changes (all five, plus the ticket form's quick-add); and account changes (created, edited, deactivated, reactivated, role changed, password reset). Admins filter by user, action, date range (last 30 days by default), free text or a target (click one in the table), and export the same view as CSV.
+- **Staff never see it:** the nav item is hidden, the URL shows an "Admins only" state, and all three endpoints answer 403.
+
+**Decisions**
+- **One writer:** `audit/log.py` `log_action()`, called explicitly at each call site (no signals), so only real user actions are logged and each description is written where the context is. It is best-effort: a failed write is logged to the server log and swallowed, inside a savepoint, so it can never break or roll back the action.
+- **Snapshots:** the actor's username, the target's label and the description are frozen at write time, so later renames don't rewrite history. `actor` is `SET_NULL`.
+- **Never logged:** passwords (a reset records only that it happened), tokens, and password hashes. Tested explicitly.
+- **Deliberately not logged:** sign-ins for unknown usernames (they'd name nobody) and throttled attempts (429, refused before any check); no-op saves; refused deletes (409); auto AMS work-log entries (the ticket activity entry already covers them); activities created with a new ticket (counted in its "created" entry).
+- **IP address:** from `client_ip()`, which trusts `X-Forwarded-For` only from `TRUSTED_PROXY_IPS` and only when it's a well-formed IP. The Next.js gateway forwards one validated address on every call (`clientAddress()`); see gap #25 for the proxy requirement.
+- **Retention:** nothing is deleted automatically. `python manage.py prune_audit_logs --older-than-days=N [--dry-run]` exists for a written retention policy and isn't scheduled.
+- **Dates:** the filter's days are whole days in the admin's profile zone (like Reports); timestamps display, and export, in the browser's zone (`tz` param).
+
+**API:** `GET /api/audit/logs/` (filters `actor`, `action` comma list, `target_type` + `target_id`, `start_date` / `end_date`, `search`, `ordering`; paginated 50/page, max 200), `GET /api/audit/logs/export/` (same filters, CSV, export throttle), `GET /api/audit/logs/actions/` (values, labels, groups).
+
+**Files:** `audit/` (`models.py`, `log.py`, `text.py`, `views.py`, the prune command), `tickets/audit.py`, `lookups/audit.py`, the call sites in `accounts/views.py`, `tickets/serializers.py`, `working_hours/views.py`, `lookups/views.py`; `app/audit-log/page.tsx`, `components/audit/audit-log-page.tsx`.
+
 ---
 
 ## 3. Cross-cutting systems
@@ -205,7 +224,7 @@ Staff see only All Tickets, with no tab bar.
 ### 3.1 Permission / role model
 
 - **Every role-gated endpoint uses a shared class** from `accounts/permissions.py`, with no inline role checks (re-verified in this audit):
-  - `IsAdminRole`: admin-only endpoints (the staff list, reports).
+  - `IsAdminRole`: admin-only endpoints (the staff list, reports, the audit log).
   - `IsAdminRoleOrSelf`: admins may target anyone, staff only themselves, and naming anyone else is a 403.
   - `IsAdminRoleOrOwner`: object level, so staff may act only on their own entries.
   - `IsAdminRoleOrReadOnly`: reads for everyone, writes for admins (Lookups, site and customer quick-add).
@@ -220,6 +239,7 @@ Staff see only All Tickets, with no tab bar.
   | Reports: Team Activity + export | Refused (403) | Allowed |
   | User search | Allowed (names/ids only) | Allowed |
   | Administration (list / create / edit users) | Refused (403) | Allowed (can't demote or deactivate themselves) |
+  | Audit Log (list, export, actions) | Refused (403) | Allowed |
 
 - **Deactivated users (one rule everywhere, made consistent in this audit):**
   - They're left out of every picker and "everyone" view: the staff list, user search, the Team Activity overview.
@@ -246,6 +266,12 @@ Browser ──(same origin, httpOnly cookies)──▶ Next.js server ──(Bea
   - It times out after 10 s.
 - **No CORS on Django,** since browsers never call it directly.
 - **The rate limit works per browser IP** only because of this hop (`X-Forwarded-For` from `TRUSTED_PROXY_IPS`).
+
+- **Error bodies never reach the UI raw (defence in depth):**
+  - The gateway (`relay()` in `lib/server/session.ts`) replaces any non-JSON error from Django with a generic JSON `{"detail": …}`. Django's DEBUG traceback page, with settings and paths in it, never leaves the Next server.
+  - The client (`request()` in `lib/api.ts`) reads an error body only when it's JSON. It uses only a short plain-text `detail`; everything else gets a status-based sentence from `lib/http-errors.ts`. `ApiError.message` is never the raw body.
+  - `StatePlaceholder` clamps its text to three lines as a last line of defence. No component uses `dangerouslySetInnerHTML`.
+- **Unapplied migrations fail `check --deploy`** (`core/checks.py`, `core.E001`), so a release can't start ahead of its migrations. `runserver` only prints a warning, and a WSGI server says nothing.
 
 ### 3.3 Design system
 
@@ -292,29 +318,35 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 
 ## 4. Current state of quality
 
-### 4.1 Tests and checks (run 2026-09-27, after the upgrade pass)
+### 4.1 Tests and checks (run 2026-09-27, consolidation audit)
 
 | Check | Result |
 |---|---|
 | `python manage.py check` | No issues |
 | `python manage.py check --deploy` (DEBUG off) | 1 warning, W004 HSTS, which is deliberately opt-in. **No issues** once HSTS is set as documented for go-live. |
-| Migrations | 42 migrations apply cleanly to an empty **SQLite** and an empty **PostgreSQL 16.2** database; `makemigrations --check` is clean |
-| Backend suite, SQLite | **249 tests, all pass** |
-| Backend suite, PostgreSQL 16.2 | **249 tests, all pass** (via `DATABASE_URL`) |
+| Migrations | 43 migrations apply cleanly to an empty **SQLite** database (42 were also verified on **PostgreSQL 16.2** in the upgrade pass); `makemigrations --check` is clean; no model table missing; `check --deploy` now fails on any unapplied migration (`core.E001`) |
+| Fresh-database reachability | On that empty database, every page's data requests (Tickets, Lookups ×5, Working Hours, Job Sheets, Reports ×2, Administration, Audit Log, 25 endpoints) answer 2xx, both empty and with rows in every table |
+| Backend suite, SQLite | **288 tests, all pass** |
+| Backend suite, PostgreSQL 16.2 | **249 tests, all pass** in the upgrade pass (via `DATABASE_URL`). Not re-run after the Audit Log pass: that run was stopped by the machine running low on memory. |
 | Frontend `typecheck` / `lint` / `format:check` | All clean |
-| Production `next build` | Succeeds; all 13 pages prerender |
+| Production `next build` | Succeeds; all 14 pages prerender |
 | Headless walkthroughs | Every page, both roles, light and dark, at 768 / 1024 / 1440 px: no page or content-area horizontal overflow; every keyboard focus stop visibly changes; all dialogs and popovers trap focus, close on Esc and return focus |
 | Auth lifecycle through the real frontend + gateway | 19/19 (previous pass) |
+| Bad-response sweep (headless) | Every page's API calls were answered with an HTML 500 debug page, an HTML 502 proxy page, JSON of an unexpected shape, and a 200 with an HTML body (48 page loads), plus the Team Activity tab and a failing save. Every one showed a short generic message (≤ 87 chars); none showed raw content |
+| Audit Log walkthrough (headless) | A filtered Export CSV download matched the on-screen rows exactly (10/10, same order); a staff sidebar has neither Administration nor Audit Log, both pages show "Admins only", and all audit/admin APIs answer 403 |
 
 **Backend tests by module:**
 - `working_hours`: 77 (`tests.py` 51, `test_auto_entries.py` 22, `test_commands.py` 4)
 - `tickets`: 58
-- `accounts`: 43 (`tests.py` 23, `test_administration.py` 20)
+- `accounts`: 44 (`tests.py` 24, `test_administration.py` 20)
 - `lookups`: 30
 - `reports`: 24
-- `core`: 17 (`tests.py` 2, `test_end_to_end.py` 4, `test_hardening.py` 11)
+- `core`: 19 (`tests.py` 4, `test_end_to_end.py` 4, `test_hardening.py` 11)
+- `audit`: 36 (`tests.py` 30, `test_flows.py` 6: real sign-in, then each walkthrough flow read back through the audit API and CSV)
 
-**Coverage added in this pass:**
+**Coverage added in the Audit Log pass:** every wired action's entry (description, actor, target, metadata); what's deliberately not logged; staff 403 on all three endpoints; every filter, ordering and bad-input 400; the CSV (headers, filename, formula guard, filters) and its throttle; a failing log write not breaking the action; the password never reaching any field; the prune command.
+
+**Coverage added in the upgrade pass:**
 - **Administration:** the full permission matrix; create, edit, deactivate, reactivate, role change and password reset (including session revocation); username uniqueness; weak passwords; the self-lockout guard; throttling.
 - **Downloads and throttles:** authenticated PDF downloads (and that `/media/` serves nothing); the export throttle.
 - **Configuration:** the `DATABASE_URL` parser.
@@ -327,7 +359,16 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 
 Severity: **H** = must fix before real use, **M** = should fix soon, **L** = polish. Effort: S / M / L.
 
-Reconciled with this pass:
+Reconciled with the consolidation audit:
+- **Fixed and removed:** #20 (there is now an audit log of admin actions, and of everything else).
+- **Fixed, with causes:**
+  - **Raw error pages rendered in the UI.** `lib/api.ts` fell back to the raw response body as `ApiError.message`, so a Django DEBUG traceback (settings, paths, part of the `SECRET_KEY`) showed as page text. Now the gateway replaces any non-JSON error, and the client only ever shows a short plain `detail` or a status-based sentence (§3.2).
+  - **A migration shipped but not applied (audit table missing, 500 on the Audit Log).** Nothing checked the migration state outside `runserver`'s console warning, and the best-effort audit writes failed quietly meanwhile. `check --deploy` now fails on pending migrations (`core.E001`).
+  - **Client IP not validated.** Any `X-Forwarded-For` from the Next server was trusted verbatim, and the gateway forwarded the browser's header as-is. Garbage or a spreadsheet formula could reach the audit log's IP column (the CSV didn't guard it), and a new junk value per request minted a fresh sign-in throttle key. Now both the gateway (`clientAddress()`) and Django (`client_ip()`) accept only a well-formed IP, and the CSV guards the IP column too.
+  - **A server blip during token refresh signed people out.** The refresh route treated any non-502 failure (e.g. a Django 500) as "session over" and cleared the cookies, and the client fired "session expired" on any refresh failure, 502 included. Now only a refused refresh token ends a session; anything else is a normal "unavailable" error.
+- **Added:** #25, #26, marked _new_.
+
+Reconciled with the upgrade pass:
 - **Fixed and removed:** SQLite-only (PostgreSQL is now supported and verified); unauthenticated PDF serving (now an authenticated view); the per-process throttle cache (Redis is configurable); user management only in Django admin (Administration); every nav item shown to staff (Administration is now hidden from them).
 - **Added:** #9, #20–#24, marked _new_.
 
@@ -352,17 +393,19 @@ Reconciled with this pass:
 | 17 | **Browser zone vs. profile zone:** the ticket form uses the browser's zone, while work logs use the profile's. | M | M |
 | 18 | **A deactivated user's Job Sheet is reachable only by URL,** and its header can't name them. | L | S |
 | 19 | **Team Activity covers staff only** (admins' own resolved time isn't in it). By design; confirm. | L | S |
-| 20 | _new_ **No audit log of admin actions.** Who created, deactivated or promoted whom (and password resets) isn't recorded anywhere beyond `date_joined` / `last_login`. | M | M |
 | 21 | _new_ **The app's admin role and Django's `/admin/` access are separate.** Promoting someone in Administration doesn't give them the Django admin site (`is_staff`), and vice versa. This is intended, but worth knowing. | L | S |
 | 22 | _new_ **CSV formula guard** prefixes innocent text starting with `-` or `+` with `'` (the standard safe trade-off). | L | S |
 | 23 | _new_ **The per-entry `hours` column is rounded to 0.01 h.** Every total in the app uses exact minutes; only outside tools summing the column would drift. | L | S |
-| 24 | _new_ **The dev server didn't hot-reload the shared gateway module** (`src/lib/server/session.ts`). After server-side frontend changes, restart `npm run dev`. Development only. | L | S |
+| 24 | **The dev server didn't hot-reload the shared gateway module** (`src/lib/server/session.ts`). After server-side frontend changes, restart `npm run dev`. Development only. | L | S |
+| 25 | _new_ **Next.js must sit behind a proxy that sets `X-Forwarded-For`.** Next only fills the header when it's absent, so if Next faces the internet directly, a client can claim any well-formed IP. That weakens the per-IP half of the sign-in limit (5 tries per claimed IP) and the audit log's IP column. Behind nginx or a load balancer that appends the header (the normal TLS setup), it's correct. If direct exposure is ever needed, add a per-username ceiling. | M (at deploy) | S |
+| 26 | _new_ **Audit log indexes are single-column** (`created_at`, `actor`, `action`, target). They're fine at this team's volume; add composite `(actor, created_at)` / `(action, created_at)` if the table reaches millions of rows. | L | S |
 
 ### 4.3 Real vs. mocked / hardcoded
 
 | Area | Status |
 |---|---|
 | Auth, roles, user search, Administration | Real |
+| Audit Log (list, filters, CSV, retention command) | Real |
 | AMS Tickets (including PDF download) | Real |
 | Lookups (5) | Real |
 | Working Hours, Job Sheets, the auto-sync | Real (goals are fixed constants) |

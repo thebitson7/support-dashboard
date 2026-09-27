@@ -7,6 +7,8 @@
 // JS cannot read; the Next server attaches the real Bearer token (see
 // src/lib/server/session.ts). So there are no tokens in here at all.
 
+import { genericErrorMessage, isJsonContentType, safeServerMessage } from "@/lib/http-errors";
+
 const API_URL = "/api";
 
 /** A request that takes longer than this is aborted and reported as an error. */
@@ -79,13 +81,15 @@ async function send(
     });
   } catch (error) {
     const timedOut = controller.signal.aborted;
+    // A caller cancelling (e.g. a newer search) isn't worth a message anyone sees.
+    const cancelled = !timedOut && error instanceof DOMException && error.name === "AbortError";
     throw new ApiError(
       0,
       timedOut
-        ? `Request timed out after ${timeoutMs / 1000}s`
-        : error instanceof Error
-          ? error.message
-          : "Network error",
+        ? `The server took too long to respond (over ${timeoutMs / 1000}s). Try again.`
+        : cancelled
+          ? "Request cancelled."
+          : genericErrorMessage(0),
     );
   } finally {
     clearTimeout(timer);
@@ -98,17 +102,27 @@ async function send(
 // whose 401 arrives just *after* a refresh finished: it was sent with the old
 // cookie, so it simply retries instead of refreshing a second time.
 
-let refreshing: Promise<boolean> | null = null;
+/**
+ * "ended" only when the refresh token itself is refused (401): the session is
+ * really over. A server or network failure is "unavailable": the session may
+ * be fine, so nobody is signed out over a blip.
+ */
+type RefreshOutcome = "renewed" | "ended" | "unavailable";
+
+let refreshing: Promise<RefreshOutcome> | null = null;
 let generation = 0;
 
-function refreshSession(): Promise<boolean> {
+function refreshSession(): Promise<RefreshOutcome> {
   refreshing ??= send("/auth/refresh", { method: "POST" })
     .then(
-      (res) => {
-        if (res.ok) generation += 1;
-        return res.ok;
+      (res): RefreshOutcome => {
+        if (res.ok) {
+          generation += 1;
+          return "renewed";
+        }
+        return res.status === 401 ? "ended" : "unavailable";
       },
-      () => false,
+      (): RefreshOutcome => "unavailable",
     )
     .finally(() => {
       refreshing = null;
@@ -124,13 +138,17 @@ function parseJson(body: string): unknown {
   }
 }
 
-/** DRF errors are JSON like {"detail": "..."}; surface that sentence when present. */
-function errorMessage(body: string, data: unknown, fallback: string): string {
+/**
+ * The message for a failed response. Only the API's own JSON {"detail": "…"}
+ * sentence is ever shown, and only if it's short plain text; anything else (an
+ * HTML error page, a proxy's 502, a traceback, per-field errors) gets a
+ * generic line for its status. The raw body is never used as a message.
+ */
+function errorMessage(data: unknown, status: number): string {
   if (data && typeof data === "object" && "detail" in data) {
-    const { detail } = data as { detail: unknown };
-    if (typeof detail === "string") return detail;
+    return safeServerMessage((data as { detail: unknown }).detail, status);
   }
-  return body || fallback;
+  return genericErrorMessage(status);
 }
 
 /**
@@ -147,21 +165,26 @@ async function request(
   let res = await send(path, init, timeoutMs);
 
   // Access cookie expired: refresh once (shared) and retry. If the refresh
-  // itself is refused the session is over.
+  // itself is refused the session is over; if the server couldn't be asked,
+  // this request fails as "unavailable" and the session is left alone.
   if (res.status === 401 && !SESSION_PATHS.has(normalize(path))) {
-    const renewed = sentAt !== generation || (await refreshSession());
-    if (renewed) {
+    const outcome = sentAt !== generation ? "renewed" : await refreshSession();
+    if (outcome === "renewed") {
       res = await send(path, init, timeoutMs);
-    } else {
+    } else if (outcome === "ended") {
       expiredListeners.forEach((listener) => listener());
+    } else {
+      throw new ApiError(503, genericErrorMessage(503));
     }
   }
 
   if (!res.ok) {
-    const body = await res.text().catch(() => "");
-    const data = parseJson(body);
+    // Only a JSON body is read at all; an HTML page (e.g. Django's debug
+    // traceback) is discarded unread, so its content can't reach any UI.
+    const json = isJsonContentType(res.headers.get("content-type"));
+    const data = json ? parseJson(await res.text().catch(() => "")) : undefined;
     const retryAfter = Number(res.headers.get("retry-after"));
-    throw new ApiError(res.status, errorMessage(body, data, res.statusText), {
+    throw new ApiError(res.status, errorMessage(data, res.status), {
       retryAfterSeconds: Number.isFinite(retryAfter) && retryAfter > 0 ? retryAfter : undefined,
       data,
     });
@@ -183,7 +206,7 @@ async function apiFetch<T>(path: string, init: RequestInit = {}): Promise<T> {
     // belong to a schema layer (e.g. zod) once real endpoints exist.
     return (await res.json()) as T;
   } catch {
-    throw new ApiError(res.status, "The server returned a response that is not valid JSON");
+    throw new ApiError(res.status, "The server returned an unexpected response.");
   }
 }
 

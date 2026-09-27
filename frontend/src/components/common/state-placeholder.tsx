@@ -34,7 +34,8 @@ export function StatePlaceholder({
       </span>
       <div className="grid gap-1">
         <p className="text-title">{title}</p>
-        <p className="text-label">{children}</p>
+        {/* Clamped as a last line of defence: messages are short by contract (see lib/api.ts). */}
+        <p className="text-label line-clamp-3 max-w-prose break-words">{children}</p>
       </div>
       {action}
     </div>

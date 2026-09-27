@@ -18,8 +18,10 @@ from rest_framework.response import Response
 from rest_framework.viewsets import ModelViewSet
 
 from accounts.permissions import IsAdminRoleOrReadOnly
+from audit.models import AuditLogEntry
 from tickets.models import Country, Customer, Holiday, Site, WorkDoneCode
 
+from .audit import field_values, log_lookup
 from .serializers import (
     CountrySerializer,
     CustomerSerializer,
@@ -50,8 +52,22 @@ class LookupViewSet(ModelViewSet):
     #: What to do instead of deleting, appended to the 409 message.
     in_use_hint = ""
 
+    # Every change is recorded in the audit log.
+    def perform_create(self, serializer):
+        log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
+
+    def perform_update(self, serializer):
+        fields = [f for f in serializer.validated_data if f in {f.name for f in serializer.Meta.model._meta.fields}]
+        before = field_values(serializer.instance, fields)
+        instance = serializer.save()
+        after = field_values(instance, fields)
+        changes = {f: {"from": before[f], "to": after[f]} for f in fields if before[f] != after[f]}
+        if changes:  # saving without changing anything isn't worth an entry
+            log_lookup(AuditLogEntry.Action.LOOKUP_UPDATED, instance, self.request, changes=changes)
+
     def destroy(self, request, *args, **kwargs):
         instance = self.get_object()
+        pk = instance.pk
         try:
             instance.delete()
         except ProtectedError as error:
@@ -62,6 +78,8 @@ class LookupViewSet(ModelViewSet):
                 {"detail": f"{detail} {self.in_use_hint}".strip(), "in_use": True},
                 status=status.HTTP_409_CONFLICT,
             )
+        # Refused deletes (409 above) change nothing, so only this one is logged.
+        log_lookup(AuditLogEntry.Action.LOOKUP_DELETED, instance, request, pk=pk)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 

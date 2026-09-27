@@ -2,6 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 
 import {
   callDjango,
+  clientAddress,
   isCrossOrigin,
   jsonError,
   relay,
@@ -22,7 +23,7 @@ export async function POST(request: NextRequest) {
     return jsonError(400, "Username and password are required.");
   }
 
-  const forwardedFor = request.headers.get("x-forwarded-for");
+  const forwardedFor = clientAddress(request);
   const tokenRes = await callDjango("/auth/token/", {
     method: "POST",
     body: JSON.stringify({ username, password }),
@@ -31,14 +32,16 @@ export async function POST(request: NextRequest) {
   // 401 bad credentials, 429 throttled (with Retry-After), 502 unreachable...
   if (!tokenRes.ok) return relay(tokenRes);
 
-  const tokens = (await tokenRes.json()) as Tokens;
+  // A 200 that isn't the expected JSON (e.g. a misconfigured proxy's page) is a
+  // clean 502, not an unhandled exception.
+  const tokens = (await tokenRes.json().catch(() => null)) as Tokens | null;
+  if (!tokens?.access) return jsonError(502, "The API server returned an unexpected response.");
   const meRes = await callDjango("/auth/me/", { access: tokens.access });
   if (!meRes.ok) return relay(meRes);
+  const me: unknown = await meRes.json().catch(() => null);
+  if (!me) return jsonError(502, "The API server returned an unexpected response.");
 
-  const response = NextResponse.json(
-    { user: await meRes.json() },
-    { headers: { "Cache-Control": "no-store" } },
-  );
+  const response = NextResponse.json({ user: me }, { headers: { "Cache-Control": "no-store" } });
   setSessionCookies(response, tokens);
   return response;
 }

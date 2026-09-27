@@ -4,6 +4,7 @@ import {
   REFRESH_COOKIE,
   callDjango,
   clearSessionCookies,
+  clientAddress,
   isCrossOrigin,
   jsonError,
 } from "@/lib/server/session";
@@ -20,6 +21,7 @@ export async function POST(request: NextRequest) {
     const upstream = await callDjango("/auth/token/blacklist/", {
       method: "POST",
       body: JSON.stringify({ refresh }),
+      forwardedFor: clientAddress(request),
     });
     // 401 = already invalid/blacklisted, which is the goal anyway. Anything
     // else leaves a live refresh token behind: worth an operator's attention.

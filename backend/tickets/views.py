@@ -16,7 +16,9 @@ from rest_framework.views import APIView
 
 from accounts.permissions import IsAdminRoleOrReadOnly
 from accounts.throttling import ExportRateThrottle
+from audit.models import AuditLogEntry
 from core.exports import csv_response, text_cell
+from lookups.audit import log_lookup
 
 from .models import Customer, Site, Ticket, WorkDoneCode
 from .serializers import (
@@ -364,6 +366,9 @@ class SiteListCreateView(ListCreateAPIView):
             qs = qs.filter(Q(name__icontains=term) | Q(ocn__icontains=term))
         return qs[:TYPEAHEAD_LIMIT]
 
+    def perform_create(self, serializer):
+        log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
+
 
 class CustomerListCreateView(ListCreateAPIView):
     """
@@ -382,6 +387,9 @@ class CustomerListCreateView(ListCreateAPIView):
         if term:
             qs = qs.filter(name__icontains=term)
         return qs[:TYPEAHEAD_LIMIT]
+
+    def perform_create(self, serializer):
+        log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
 
 
 class WorkDoneCodeListView(ListAPIView):

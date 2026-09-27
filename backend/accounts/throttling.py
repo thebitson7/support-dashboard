@@ -4,6 +4,7 @@ default cache: per process locally, shared Redis in production (REDIS_URL).
 """
 
 import hashlib
+import ipaddress
 import re
 from collections.abc import Mapping
 
@@ -14,16 +15,26 @@ from rest_framework.throttling import SimpleRateThrottle, UserRateThrottle
 _UNIT_SECONDS = {"s": 1, "m": 60, "h": 3600, "d": 86400}
 
 
+def _valid_ip(value: str) -> str | None:
+    try:
+        return str(ipaddress.ip_address(value.strip()))
+    except ValueError:
+        return None
+
+
 def client_ip(request) -> str:
     """
     The browser's IP. Behind the Next.js proxy REMOTE_ADDR is the proxy, so
     the right-most X-Forwarded-For entry (the one the proxy added) is used,
-    but only when the request really comes from a trusted proxy.
+    but only when the request really comes from a trusted proxy, and only if
+    it is a well-formed IP address. Anything else (garbage, a spreadsheet
+    formula, an over-long string) falls back to REMOTE_ADDR, so it can't end
+    up in the audit log or be used to mint fresh sign-in throttle keys.
     """
     remote = request.META.get("REMOTE_ADDR", "")
     forwarded = request.META.get("HTTP_X_FORWARDED_FOR", "")
     if forwarded and remote in settings.TRUSTED_PROXY_IPS:
-        return forwarded.split(",")[-1].strip() or remote
+        return _valid_ip(forwarded.split(",")[-1]) or remote
     return remote
 
 

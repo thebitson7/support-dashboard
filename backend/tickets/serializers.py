@@ -8,6 +8,8 @@ from accounts.models import User
 from accounts.serializers import UserRefSerializer
 from working_hours.sync import sync_ticket
 
+from . import audit
+
 from .models import Customer, Site, Ticket, TicketActivity, WorkDoneCode
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
@@ -232,6 +234,8 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         self._replace_activities(ticket, activities)
         # Mirror resolved activities into their resolvers' work logs.
         sync_ticket(ticket)
+        if request := self.context.get("request"):
+            audit.log_created(ticket, request, len(activities))
         return ticket
 
     @transaction.atomic
@@ -242,6 +246,9 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         # leave both sets behind. (A no-op on SQLite, which serialises writes.)
         Ticket.objects.select_for_update().filter(pk=instance.pk).exists()
         activities = validated_data.pop("activities", None)
+        # For the audit trail: the ticket (and its activities) as they were.
+        before = audit.snapshot(instance)
+        old_activities = audit.stored_activities(instance) if activities is not None else None
         old_pdf = instance.pdf_attachment.name
         for field, value in validated_data.items():
             setattr(instance, field, value)
@@ -255,6 +262,9 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         # Work logs follow the activities (replaced ones' entries went with
         # them by CASCADE) and the ticket number shown in their reference.
         sync_ticket(instance)
+        if request := self.context.get("request"):
+            new_activities = audit.sent_activities(activities) if activities is not None else None
+            audit.log_updated(instance, request, before, old_activities, new_activities)
 
         if old_pdf and instance.pdf_attachment.name != old_pdf:
             # Replaced or removed: delete the old file once the update commits.

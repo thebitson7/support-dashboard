@@ -143,6 +143,24 @@ class LoginRateLimitTests(AuthTestCase):
         response = self.login(REMOTE_ADDR="198.51.100.7", HTTP_X_FORWARDED_FOR="10.0.0.99")
         self.assertEqual(response.status_code, 429)
 
+    def test_malformed_forwarded_for_falls_back_to_the_proxy_address(self):
+        # Garbage (or a spreadsheet formula) in X-Forwarded-For can't mint a
+        # fresh throttle key per request, nor reach the audit log.
+        from rest_framework.test import APIRequestFactory
+
+        from .throttling import client_ip
+
+        factory = APIRequestFactory()
+        for bad in ("=HYPERLINK(\"http://x\")", "not-an-ip", "1.2.3.4.5", "x" * 200, ""):
+            with self.subTest(bad=bad):
+                request = factory.get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=f"10.0.0.1, {bad}")
+                self.assertEqual(client_ip(request), "127.0.0.1")
+        request = factory.get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="10.0.0.1, 2001:db8::1 ")
+        self.assertEqual(client_ip(request), "2001:db8::1")
+        for n in range(5):
+            self.login("agent", "wrong", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=f"junk-{n}")
+        self.assertEqual(self.login(REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR="junk-99").status_code, 429)
+
     def test_non_object_body_does_not_crash_the_throttle(self):
         response = self.client.post(TOKEN_URL, ["not", "an", "object"], format="json")
         self.assertEqual(response.status_code, 400)

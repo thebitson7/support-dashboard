@@ -23,14 +23,18 @@ export async function POST(request: NextRequest) {
     : null;
 
   if (!upstream?.ok) {
-    // An unreachable API is not a logout: keep the cookies and let the client retry.
-    if (upstream?.status === 502) return jsonError(502, "The API server is unreachable.");
+    // A server failure (unreachable, 500...) is not a logout: keep the cookies
+    // and let the client retry. Only a refused refresh token ends the session.
+    if (upstream && upstream.status >= 500) {
+      return jsonError(502, "The API server is unavailable right now.");
+    }
     const response = jsonError(401, "Your session has ended. Please sign in again.");
     clearSessionCookies(response);
     return response;
   }
 
-  const tokens = (await upstream.json()) as Tokens;
+  const tokens = (await upstream.json().catch(() => null)) as Tokens | null;
+  if (!tokens?.access) return jsonError(502, "The API server returned an unexpected response.");
   const response = new NextResponse(null, { status: 204 });
   setSessionCookies(response, tokens);
   return response;

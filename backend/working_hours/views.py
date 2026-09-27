@@ -11,11 +11,15 @@ from rest_framework.views import APIView
 from accounts.models import User
 from accounts.permissions import IsAdminRole, IsAdminRoleOrOwner, IsAdminRoleOrSelf
 from accounts.serializers import UserSummarySerializer
+from audit import text
+from audit.log import log_action, person
+from audit.models import AuditLogEntry
 
 from .models import WorkLogEntry
 from .periods import local_today, summarize
 from .serializers import WorkLogEntrySerializer
 from .sync import ticket_label
+from .totals import entry_minutes
 
 # Ids beyond this overflow the database integer type (a 500, not a 400).
 MAX_ID = 2**63 - 1
@@ -136,7 +140,8 @@ class EntryListCreateView(ListCreateAPIView):
         return context
 
     def perform_create(self, serializer):
-        serializer.save(user=self.target)
+        entry = serializer.save(user=self.target)
+        log_work_entry(AuditLogEntry.Action.WORK_LOG_CREATED, entry, self.request)
 
 
 class AutoEntryLocked(APIException):
@@ -180,3 +185,55 @@ class EntryDetailView(RetrieveUpdateDestroyAPIView):
     def destroy(self, request, *args, **kwargs):
         self._refuse_auto()
         return super().destroy(request, *args, **kwargs)
+
+    # Only manual entries reach these (auto ones are refused above): an auto
+    # entry's history is its ticket's, which the ticket's own log covers.
+    def perform_update(self, serializer):
+        before = work_entry_phrase(serializer.instance)
+        entry = serializer.save()
+        log_work_entry(AuditLogEntry.Action.WORK_LOG_UPDATED, entry, self.request, before=before)
+
+    def perform_destroy(self, instance):
+        phrase, label, pk = work_entry_phrase(instance), work_entry_label(instance), instance.pk
+        instance.delete()
+        log_work_entry(AuditLogEntry.Action.WORK_LOG_DELETED, instance, self.request, phrase=phrase, label=label, pk=pk)
+
+
+# --- Audit wording ---------------------------------------------------------------
+
+
+def work_entry_phrase(entry) -> str:
+    """"1h 30m of Non-AMS work (9:00 AM – 10:30 AM) on 4 Mar 2026"."""
+    return (
+        f"{text.duration(entry_minutes(entry))} of {entry.get_category_display()} work "
+        f"({text.clock(entry.start_time)} – {text.clock(entry.end_time)}) on {text.day(entry.date)}"
+    )
+
+
+def work_entry_label(entry) -> str:
+    return f"Work log: {person(entry.user)} · {text.day(entry.date)}"
+
+
+def log_work_entry(action, entry, request, *, before=None, phrase=None, label=None, pk=None) -> None:
+    actor = request.user
+    owner = entry.user
+    for_whom = "" if owner.pk == actor.pk else f" for {person(owner)}"
+    phrase = phrase or work_entry_phrase(entry)
+    verbs = {
+        AuditLogEntry.Action.WORK_LOG_CREATED: f"logged {phrase}{for_whom}",
+        AuditLogEntry.Action.WORK_LOG_UPDATED: f"edited hours{for_whom}: now {phrase}",
+        AuditLogEntry.Action.WORK_LOG_DELETED: f"deleted {phrase}{for_whom}",
+    }
+    metadata = {"user": owner.username, "date": entry.date.isoformat(), "minutes": entry_minutes(entry)}
+    if before is not None:
+        metadata["before"] = before
+    log_action(
+        actor,
+        action,
+        target_type="work_log",
+        target_id=pk or entry.pk,
+        target_label=label or work_entry_label(entry),
+        description=f"{person(actor)} {verbs[action]}",
+        metadata=metadata,
+        request=request,
+    )
