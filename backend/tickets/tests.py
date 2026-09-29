@@ -230,7 +230,7 @@ class TicketMultipartTests(TicketTestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         ticket = Ticket.objects.get(pk=response.json()["id"])
-        self.assertTrue(ticket.pdf_attachment.name.startswith("tickets/attachments/report"))
+        self.assertTrue(str(ticket.pdf_attachment).startswith("tickets/attachments/report"))
         self.assertEqual(ticket.total_duration_hours, Decimal("1.00"))
         self.assertIsNone(ticket.forwarded_to)
 
@@ -690,6 +690,7 @@ class TicketMultipartUpdateTests(TicketTestCase):
         from django.core.files.storage import default_storage
 
         old = self.ticket.pdf_attachment.name
+        assert old  # the fixture ticket has a PDF
         clear = {"is_forwarded": "false", "forwarded_to": "", "possible_root_cause": "", "pdf_attachment": ""}
         with self.captureOnCommitCallbacks(execute=True):
             response = self.client.patch(self.url, clear, format="multipart")

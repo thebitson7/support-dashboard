@@ -1,3 +1,5 @@
+"""The custom user model: Django's user plus an application role and a home time zone."""
+
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.contrib.auth.models import AbstractUser
@@ -8,6 +10,7 @@ DEFAULT_TIMEZONE = "Asia/Kuala_Lumpur"
 
 
 def validate_timezone(value: str) -> None:
+    """Model/serializer validator: `value` must be a zone the tz database knows."""
     try:
         ZoneInfo(value)
     except (ZoneInfoNotFoundError, ValueError):
@@ -15,6 +18,12 @@ def validate_timezone(value: str) -> None:
 
 
 class User(AbstractUser):
+    """
+    Everyone who signs in: support staff and admins (the `role`). Accounts are
+    deactivated (`is_active`), never deleted, since tickets, work logs and the
+    audit log keep referring to them.
+    """
+
     class Role(models.TextChoices):
         STAFF = "staff", "Staff"
         ADMIN = "admin", "Admin"
@@ -38,6 +47,7 @@ class User(AbstractUser):
 
     @property
     def is_admin_role(self) -> bool:
+        """The application's admin role (what IsAdminRole checks), not Django's is_staff."""
         return self.role == self.Role.ADMIN
 
     @property

@@ -21,7 +21,14 @@ const PATTERN = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})$/;
 export function parseLocal(value: string): LocalParts | null {
   const m = PATTERN.exec(value);
   if (!m) return null;
-  const [year, month, day, hour, minute] = m.slice(1).map(Number);
+  // PATTERN has exactly five all-digit groups, so all five are numbers.
+  const [year, month, day, hour, minute] = m.slice(1, 6).map(Number) as [
+    number,
+    number,
+    number,
+    number,
+    number,
+  ];
   if (month < 1 || month > 12 || day < 1 || day > daysInMonth(year, month)) return null;
   if (hour > 23 || minute > 59) return null;
   return { year, month, day, hour, minute };

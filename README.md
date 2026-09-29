@@ -1,5 +1,7 @@
 # Support Dashboard
 
+[![CI](https://github.com/thebitson7/support-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/thebitson7/support-dashboard/actions/workflows/ci.yml)
+
 Support Ticket & Work Stats Dashboard — internal redesign.
 
 ## Tech stack
@@ -18,7 +20,7 @@ support-dashboard/
 ## Prerequisites
 
 - Node.js 20+
-- Python 3.11+
+- Python 3.12+ (Django 6.1's minimum; CI runs 3.14)
 - git
 
 ## Backend setup (Django)
@@ -37,7 +39,8 @@ Activate the virtual environment:
 Install dependencies:
 
 ```bash
-pip install -r requirements.txt
+pip install -r requirements.txt       # runtime only
+pip install -r requirements-dev.txt   # or: runtime + dev tools (mypy and the Django/DRF stubs)
 ```
 
 Create your local environment file:
@@ -91,6 +94,46 @@ The app is now available at `http://localhost:3000`.
 With the backend running on port 8000 and the frontend on port 3000, open `http://localhost:3000` and sign in (e.g. `admin` / `password123` after `seed_users`). Use `localhost`, not `127.0.0.1`: the API gateway refuses cross-origin writes, and Next reports its origin as `localhost`.
 
 The seed commands are for local development only and refuse to run with `DEBUG` off. AMS hours are never seeded: they come only from ticket activities that have a resolver. To (re)build those work-log entries from existing activities, e.g. after a data import, run `python manage.py sync_ticket_work_logs` (safe in any environment).
+
+## Tests and checks
+
+Backend (from `backend/`, with `requirements-dev.txt` installed):
+
+```bash
+python manage.py test                              # Django test suite
+python manage.py check
+python manage.py makemigrations --check --dry-run  # fails if a model change has no migration
+mypy .                                             # type check (config: backend/pyproject.toml)
+```
+
+Frontend (from `frontend/`):
+
+```bash
+npm run test          # Vitest + React Testing Library, once (npm run test:watch to re-run on save)
+npm run typecheck
+npm run lint
+npm run format:check
+```
+
+Frontend tests sit next to the code they cover (`foo.ts` → `foo.test.ts`); shared setup and fixtures are in `src/test/`. They run in the `America/New_York` time zone on every machine (see `vitest.config.mts`), so date code that mixes up UTC and local time fails consistently.
+
+## CI
+
+`.github/workflows/ci.yml` runs on every push and pull request, as two parallel jobs; either failing fails the run:
+
+- **Backend** (Python 3.14): `manage.py check`, `makemigrations --check`, `mypy`, then the full Django test suite, against SQLite.
+- **Frontend** (Node 24): `npm ci`, typecheck, lint, format check, the Vitest suite, then a production `next build`.
+
+Results are on the repository's **Actions** tab, on each pull request's checks, and in the badge at the top of this file.
+
+## API documentation
+
+OpenAPI 3 documentation is generated from the code by [drf-spectacular](https://drf-spectacular.readthedocs.io/):
+
+- `/api/docs/`: Swagger UI (browse endpoints, parameters and response shapes; "Authorize" takes a JWT access token).
+- `/api/schema/`: the raw schema (YAML; `?format=json` for JSON), e.g. for client generation.
+
+Local development (`DEBUG=True`): open to anyone at `http://localhost:8000/api/docs/`. Everywhere else they're **admin role only**: a signed-in admin opens `https://<frontend>/api/docs` (the frontend's gateway adds their token); anyone else gets 401/403. A backend test fails if the schema stops generating cleanly (`--validate --fail-on-warn`), so undocumentable views are caught in CI.
 
 ## PostgreSQL (production database)
 

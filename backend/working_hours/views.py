@@ -1,6 +1,8 @@
 from functools import cached_property
 
 from django.utils.dateparse import parse_date
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.exceptions import APIException, NotFound, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateDestroyAPIView
@@ -16,6 +18,7 @@ from audit.log import log_action, person
 from audit.models import AuditLogEntry
 
 from .models import WorkLogEntry
+from .openapi import WorkingHoursSummary
 from .periods import local_today, summarize
 from .serializers import WorkLogEntrySerializer
 from .sync import ticket_label
@@ -53,6 +56,13 @@ def target_user(request, param: str = "user_id") -> User:
     return target
 
 
+USER_ID = OpenApiParameter(
+    "user_id",
+    int,
+    description="Whose data. Staff: omit (or give their own id). Admin: required, any user.",
+)
+
+
 class StaffUserListView(ListAPIView):
     """Staff users an admin can pick from. Admin role only."""
 
@@ -64,6 +74,12 @@ class StaffUserListView(ListAPIView):
     )
 
 
+@extend_schema(
+    summary="Working-hours period totals",
+    parameters=[USER_ID],
+    request=None,
+    responses=WorkingHoursSummary,
+)
 class SummaryView(APIView):
     """
     Period totals for one user.
@@ -92,6 +108,16 @@ class SummaryView(APIView):
         )
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="One day's work-log entries",
+        parameters=[
+            USER_ID,
+            OpenApiParameter("date", OpenApiTypes.DATE, description="Default: the viewer's today."),
+        ],
+    ),
+    post=extend_schema(summary="Log hours", parameters=[USER_ID]),
+)
 class EntryListCreateView(ListCreateAPIView):
     """
     One user's entries for one day, and logging new ones.
@@ -134,7 +160,7 @@ class EntryListCreateView(ListCreateAPIView):
         )
 
     def get_serializer_context(self):
-        context = super().get_serializer_context()
+        context = dict(super().get_serializer_context())
         if self.request.method == "POST":
             context["target"] = self.target
         return context
@@ -149,6 +175,13 @@ class AutoEntryLocked(APIException):
     default_code = "auto_entry"
 
 
+AUTO_ENTRY_CONFLICT = {409: OpenApiResponse(description="An auto entry (from a ticket activity): edit the ticket.")}
+
+
+@extend_schema_view(
+    patch=extend_schema(responses={200: WorkLogEntrySerializer, **AUTO_ENTRY_CONFLICT}),
+    delete=extend_schema(responses={204: None, **AUTO_ENTRY_CONFLICT}),
+)
 class EntryDetailView(RetrieveUpdateDestroyAPIView):
     """
     GET / PATCH {date, start_time, end_time, category, note} / DELETE one entry. Staff: only

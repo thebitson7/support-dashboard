@@ -11,6 +11,7 @@ from unittest.mock import patch
 from django.core.cache import cache
 from django.core.exceptions import ImproperlyConfigured
 from django.core.files.base import ContentFile
+from django.http import FileResponse
 from django.test import SimpleTestCase, override_settings
 from rest_framework.test import APITestCase
 from rest_framework.throttling import SimpleRateThrottle
@@ -82,6 +83,7 @@ class AttachmentDownloadTests(Fixtures):
         # The stored name: storage sanitises it at upload ("service report, Mar.pdf").
         self.assertIn('filename="service_report_Mar.pdf"', response["Content-Disposition"])
         self.assertEqual(response["Cache-Control"], "private, no-store")
+        assert isinstance(response, FileResponse)  # streamed, not buffered
         self.assertEqual(b"".join(response.streaming_content), b"%PDF-1.7 report body")
 
     def test_no_attachment_or_missing_file_or_ticket_is_a_404(self):

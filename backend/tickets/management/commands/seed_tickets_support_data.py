@@ -59,7 +59,8 @@ SITES = [
 # (name, date, country code or None for global, recurs annually). Recurring
 # ones are stored in 2026; only their month/day matter. Holidays whose date
 # moves every year are entered for a specific year.
-HOLIDAYS = [
+# (name, date, country code or None for every country, recurs yearly)
+HOLIDAYS: list[tuple[str, date, str | None, bool]] = [
     ("New Year's Day", date(2026, 1, 1), None, True),
     ("Company Foundation Day", date(2026, 3, 15), None, True),
     ("Christmas Day", date(2026, 12, 25), None, True),
@@ -136,10 +137,10 @@ class Command(DevOnlyCommand):
             Customer.objects.get_or_create(name=name)
         for code, description in WORK_DONE_CODES:
             WorkDoneCode.objects.get_or_create(code=code, defaults={"description": description})
-        for name, day, code, recurring in HOLIDAYS:
+        for name, day, country_code, recurring in HOLIDAYS:
             Holiday.objects.get_or_create(
                 name=name,
-                country=countries[code] if code else None,
+                country=countries[country_code] if country_code else None,
                 defaults={"date": day, "is_recurring_annually": recurring},
             )
 

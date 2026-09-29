@@ -2,6 +2,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Sum
+from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
 from accounts.models import User
@@ -34,8 +35,11 @@ def minutes_to_hours(minutes: int) -> Decimal:
 
 
 # --- Reference data ------------------------------------------------------------
+# The ticket form's compact shapes. Lookups has fuller serializers of the same
+# models, so these get their own names in the OpenAPI schema.
 
 
+@extend_schema_serializer(component_name="TicketFormSite")
 class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
@@ -48,6 +52,7 @@ class SiteSerializer(serializers.ModelSerializer):
         return value.strip().upper()
 
 
+@extend_schema_serializer(component_name="TicketFormCustomer")
 class CustomerSerializer(serializers.ModelSerializer):
     # Explicit field: the automatic unique validator would compare the raw,
     # case-sensitive input and let "singhealth" in beside "SingHealth".
@@ -59,11 +64,15 @@ class CustomerSerializer(serializers.ModelSerializer):
 
     def validate_name(self, value):
         value = value.strip()
-        if Customer.objects.filter(name__iexact=value).exclude(pk=getattr(self.instance, "pk", None)).exists():
+        clashes = Customer.objects.filter(name__iexact=value)
+        if self.instance is not None:
+            clashes = clashes.exclude(pk=self.instance.pk)
+        if clashes.exists():
             raise serializers.ValidationError("A customer with this name already exists.")
         return value
 
 
+@extend_schema_serializer(component_name="TicketFormWorkDoneCode")
 class WorkDoneCodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = WorkDoneCode

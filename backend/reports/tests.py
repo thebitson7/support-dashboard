@@ -253,7 +253,7 @@ class TeamActivityExportTests(ReportTestCase):
 
     def test_one_person(self):
         response = self.client.get(
-            EXPORT_URL, {"start_date": "2026-03-01", "end_date": "2026-04-30", "user_id": self.bob.pk}
+            EXPORT_URL, {"start_date": "2026-03-01", "end_date": "2026-04-30", "user_id": str(self.bob.pk)}
         )
         self.assertEqual(
             response["Content-Disposition"], 'attachment; filename="team-activity_bob_2026-03-01_2026-04-30.csv"'
@@ -283,7 +283,7 @@ class TicketExportTests(ReportTestCase):
         )
 
     def test_all_matching_rows_with_the_tables_columns(self):
-        response = self.client.get(TICKETS_EXPORT_URL, {"page_size": 1, "ordering": "received_at"})
+        response = self.client.get(TICKETS_EXPORT_URL, {"page_size": "1", "ordering": "received_at"})
 
         self.assertEqual(response.status_code, 200)
         self.assertEqual(response["Content-Disposition"], 'attachment; filename="tickets-2026-03-04.csv"')
@@ -329,7 +329,7 @@ class TicketExportTests(ReportTestCase):
         _, closed = read_csv(self.client.get(TICKETS_EXPORT_URL, {"status": "closed"}))
         self.assertEqual([r[2] for r in closed], ["200CLOSED"])
 
-        _, by_site = read_csv(self.client.get(TICKETS_EXPORT_URL, {"site": self.site.pk, "search": "open"}))
+        _, by_site = read_csv(self.client.get(TICKETS_EXPORT_URL, {"site": str(self.site.pk), "search": "open"}))
         self.assertEqual([r[2] for r in by_site], ["100OPEN"])
 
         _, by_date = read_csv(
@@ -384,7 +384,7 @@ class ExactTotalsRegressionTests(ReportTestCase):
         overview = next(
             m for m in self.client.get(REPORT_URL, params).json()["members"] if m["user"]["username"] == "alice"
         )
-        detail = self.client.get(REPORT_URL, {**params, "user_id": self.alice.pk}).json()
+        detail = self.client.get(REPORT_URL, {**params, "user_id": str(self.alice.pk)}).json()
 
         def span(e):
             (sh, sm), (eh, em) = map(int, e["start_time"].split(":")), map(int, e["end_time"].split(":"))

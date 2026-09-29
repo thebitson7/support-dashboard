@@ -1,7 +1,7 @@
 """Management commands: what the seeds generate, and which commands may run where."""
 
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone as dt_timezone
+from datetime import date, datetime, timedelta, timezone as dt_timezone
 from decimal import Decimal
 from io import StringIO
 
@@ -30,7 +30,7 @@ class SeedWorkLogsTests(TestCase):
         self.assertFalse(entries.filter(ticket_activity__isnull=False).exists())
         self.assertFalse(entries.filter(user=self.admin).exists())  # staff only
 
-        per_day = defaultdict(Decimal)
+        per_day: defaultdict[tuple[int, date], Decimal] = defaultdict(Decimal)
         for e in entries:
             self.assertLess(e.start_time, e.end_time)
             self.assertEqual(e.hours, hours_between(e.start_time, e.end_time))

@@ -115,6 +115,7 @@ INSTALLED_APPS = [
     "django.contrib.staticfiles",
     "rest_framework",
     "rest_framework_simplejwt.token_blacklist",
+    "drf_spectacular",
     "core",
     "accounts",
     "working_hours",
@@ -178,6 +179,8 @@ REST_FRAMEWORK = {
     "DEFAULT_PERMISSION_CLASSES": [
         "rest_framework.permissions.IsAuthenticated",
     ],
+    # OpenAPI 3 schema generation (drf-spectacular), served at /api/schema/.
+    "DEFAULT_SCHEMA_CLASS": "drf_spectacular.openapi.AutoSchema",
     # Scoped rates for throttles that opt in (see accounts/throttling.py).
     "DEFAULT_THROTTLE_RATES": {
         # Sign-in attempts per username + client IP.
@@ -199,6 +202,45 @@ SIMPLE_JWT = {
     # Record each sign-in on the user (Administration's "Last sign-in" column);
     # without this, only Django-admin logins set it.
     "UPDATE_LAST_LOGIN": True,
+}
+
+# --- API documentation (drf-spectacular) --------------------------------------
+# /api/schema/ (OpenAPI 3, YAML or ?format=json) and /api/docs/ (Swagger UI).
+# Open to anyone in local development; admin role only everywhere else. In
+# production an admin reaches them through the frontend's own origin
+# (https://<frontend>/api/docs), whose gateway adds their Bearer token.
+
+SPECTACULAR_SETTINGS = {
+    "TITLE": "Support Dashboard API",
+    "DESCRIPTION": (
+        "Internal API behind the Support Ticket & Work Stats Dashboard: AMS support "
+        "tickets and their activities, staff working hours (manual Non-AMS entries and "
+        "AMS time mirrored from ticket activities), the reference data tickets use "
+        "(countries, sites, customers, work-done codes, holidays), team reports, user "
+        "administration and the audit log.\n\n"
+        "Every endpoint needs a JWT access token (`Authorization: Bearer <token>`, from "
+        "`POST /api/auth/token/`) unless marked otherwise. Endpoints described as "
+        "*admin only* also need the `admin` application role. Browsers never call this "
+        "API directly: the Next.js frontend proxies it and keeps the tokens in httpOnly "
+        "cookies."
+    ),
+    "VERSION": "1.0.0",
+    # The schema endpoint itself isn't part of the API.
+    "SERVE_INCLUDE_SCHEMA": False,
+    "SERVE_PERMISSIONS": (
+        ["rest_framework.permissions.AllowAny"] if DEBUG else ["accounts.permissions.IsAdminRole"]
+    ),
+    # Request and response shapes as separate components where they differ
+    # (e.g. read-only fields), so the documented request bodies are accurate.
+    "COMPONENT_SPLIT_REQUEST": True,
+    # One named enum for the audit actions wherever they appear (entries, the
+    # `action` filter, the actions list).
+    "ENUM_NAME_OVERRIDES": {"AuditActionEnum": "audit.models.AuditLogEntry.Action"},
+    # A fixed Swagger UI release from the CDN (the default is "@latest").
+    "SWAGGER_UI_DIST": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0",
+    "SWAGGER_UI_FAVICON_HREF": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0/favicon-32x32.png",
+    # Swagger UI keeps a pasted token across page reloads.
+    "SWAGGER_UI_SETTINGS": {"persistAuthorization": True},
 }
 
 # The Next.js server calls this API on the browser's behalf, so REMOTE_ADDR is

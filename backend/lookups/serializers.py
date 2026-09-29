@@ -68,7 +68,7 @@ class SiteSerializer(serializers.ModelSerializer):
     class Meta:
         model = Site
         fields = ["id", "name", "ocn", "country", "country_name", "country_code", "address", "is_active"]
-        validators = []  # the (name, ocn) pair is checked in validate() with a clearer message
+        validators: list[object] = []  # the (name, ocn) pair is checked in validate() with a clearer message
 
     def validate_name(self, value):
         return value.strip()

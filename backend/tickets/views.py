@@ -6,6 +6,8 @@ from django.db.models.functions import Concat
 from django.http import FileResponse, QueryDict
 from django.utils import timezone
 from django.utils.dateparse import parse_datetime
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
 from rest_framework.pagination import PageNumberPagination
@@ -45,6 +47,15 @@ class TicketPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = "page_size"
     max_page_size = 200
+
+    def get_paginated_response_schema(self, schema):
+        # Documents the `total` that TicketListCreateView.list() adds to each page.
+        response = super().get_paginated_response_schema(schema)
+        response["properties"]["total"] = {
+            "type": "integer",
+            "description": "Every ticket, ignoring the filters (tells “no tickets yet” from “no matches”).",
+        }
+        return response
 
 
 def person_name(prefix: str):
@@ -154,7 +165,56 @@ def filtered_tickets(params):
     return qs.order_by(*parse_ordering(params.get("ordering") or DEFAULT_ORDERING))
 
 
-class TicketWriteMixin:
+# --- API documentation (drf-spectacular) ------------------------------------------
+
+TICKET_FILTERS = [
+    OpenApiParameter(
+        "search",
+        str,
+        description=(
+            "Case-insensitive match on site name or OCN, CMS ticket number, status, "
+            "or the assignee's, creator's or closer's name or username."
+        ),
+    ),
+    OpenApiParameter("status", str, enum=["open", "closed"], description="Derived from `cms_closed_on`."),
+    OpenApiParameter("site", int, description="A site id."),
+    OpenApiParameter(
+        "received_after", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."
+    ),
+    OpenApiParameter(
+        "received_before", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."
+    ),
+    OpenApiParameter(
+        "ordering",
+        str,
+        enum=[f"{sign}{key}" for key in ORDERINGS for sign in ("", "-")],
+        description=f"A column, `-` prefix for descending. Default `{DEFAULT_ORDERING}`; empty values sort last.",
+    ),
+]
+
+EXPORT_TZ = OpenApiParameter(
+    "tz",
+    str,
+    description=(
+        "IANA time zone for the date-time columns (named in their headings), e.g. "
+        "`Asia/Kuala_Lumpur`. Default: the requester's profile zone."
+    ),
+)
+
+CSV_RESPONSE = {
+    (200, "text/csv"): OpenApiResponse(OpenApiTypes.BINARY, description="A UTF-8 CSV file (attachment)."),
+    400: OpenApiResponse(description="An invalid filter, named in the body."),
+    429: OpenApiResponse(description="Export rate limit reached; see `Retry-After`."),
+}
+
+MULTIPART_NOTE = (
+    "\n\nSend JSON, or multipart/form-data to include a `pdf_attachment` (≤ 10 MB). In "
+    "multipart, `activities` is a JSON-encoded array in one form field, and an empty "
+    "value clears an optional field."
+)
+
+
+class TicketWriteMixin(APIView):
     """Shared by create and update: JSON or multipart bodies, one normalised payload."""
 
     parser_classes = [JSONParser, MultiPartParser, FormParser]
@@ -188,6 +248,15 @@ class TicketWriteMixin:
         return data
 
 
+@extend_schema_view(
+    get=extend_schema(summary="List tickets", parameters=TICKET_FILTERS),
+    post=extend_schema(
+        summary="Create a ticket",
+        description="Validation as documented on the write shape." + MULTIPART_NOTE,
+        request=TicketWriteSerializer,
+        responses={201: TicketListSerializer},
+    ),
+)
 class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
     """
     GET: the AMS Tickets table, server-side.
@@ -223,6 +292,12 @@ class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
         return Response(serializer.to_representation(ticket), status=201)
 
 
+@extend_schema(
+    summary="Export tickets as CSV",
+    parameters=[*TICKET_FILTERS, EXPORT_TZ],
+    request=None,
+    responses=CSV_RESPONSE,
+)
 class TicketExportView(APIView):
     """
     GET: the tickets table as CSV. Same query params as the list (search,
@@ -286,6 +361,14 @@ class TicketExportView(APIView):
         return csv_response(f"tickets-{today.isoformat()}.csv", header, rows)
 
 
+@extend_schema(
+    summary="Download a ticket's PDF",
+    request=None,
+    responses={
+        (200, "application/pdf"): OpenApiResponse(OpenApiTypes.BINARY, description="The PDF (attachment)."),
+        404: OpenApiResponse(description="No such ticket, no attachment, or its file is missing."),
+    },
+)
 class TicketAttachmentView(APIView):
     """
     GET: download a ticket's PDF attachment. Open to anyone signed in, like
@@ -306,13 +389,31 @@ class TicketAttachmentView(APIView):
         response = FileResponse(
             handle,
             as_attachment=True,
-            filename=ticket.pdf_attachment.name.rsplit("/", 1)[-1],
+            filename=str(ticket.pdf_attachment).rsplit("/", 1)[-1],
             content_type="application/pdf",
         )
         response["Cache-Control"] = "private, no-store"
         return response
 
 
+@extend_schema_view(
+    get=extend_schema(summary="Get a ticket with its activities"),
+    put=extend_schema(
+        summary="Replace a ticket",
+        description="Every field, as for creation." + MULTIPART_NOTE,
+        request=TicketWriteSerializer,
+        responses=TicketDetailSerializer,
+    ),
+    patch=extend_schema(
+        summary="Edit a ticket",
+        description=(
+            "Only the fields sent change. Sending `activities` replaces the whole set; "
+            "clearing all five verification fields reopens a closed ticket." + MULTIPART_NOTE
+        ),
+        request=TicketWriteSerializer,
+        responses=TicketDetailSerializer,
+    ),
+)
 class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):
     """
     GET: one ticket with its activities (pre-fills the edit dialog).
@@ -347,6 +448,10 @@ class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):
         return Response(TicketDetailSerializer(self.get_object()).data)
 
 
+TYPEAHEAD_QUERY = OpenApiParameter("q", str, description="Search text; omit for the first 20.")
+
+
+@extend_schema_view(get=extend_schema(parameters=[TYPEAHEAD_QUERY]))
 class SiteListCreateView(ListCreateAPIView):
     """
     The ticket form's site field. GET ?q= typeahead over *active* sites (name
@@ -370,6 +475,7 @@ class SiteListCreateView(ListCreateAPIView):
         log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
 
 
+@extend_schema_view(get=extend_schema(parameters=[TYPEAHEAD_QUERY]))
 class CustomerListCreateView(ListCreateAPIView):
     """
     The ticket form's customer field. GET ?q= typeahead by name (max 20), for

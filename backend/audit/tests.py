@@ -6,6 +6,8 @@ from unittest.mock import patch
 
 from django.core.cache import cache
 from django.core.management import CommandError, call_command
+from typing import Any
+
 from django.db import DatabaseError
 from rest_framework.test import APITestCase
 from rest_framework.throttling import SimpleRateThrottle
@@ -21,6 +23,13 @@ NOW = datetime(2026, 3, 4, 6, 0, tzinfo=UTC)  # 14:00 in Kuala Lumpur
 A = AuditLogEntry.Action
 STRONG = "Correct-Horse-9-Battery"
 LOGS = "/api/audit/logs/"
+
+
+def logged(actor, action, **fields: Any) -> AuditLogEntry:
+    """log_action() for tests that use the entry: it returns None only if writing fails."""
+    entry = log_action(actor, action, **fields)
+    assert entry is not None
+    return entry
 
 
 class AuditTestCase(APITestCase):
@@ -232,7 +241,7 @@ class LookupEventTests(AuditTestCase):
         self.client.force_authenticate(self.admin)
 
     def test_create_edit_delete_on_every_lookup(self):
-        cases = [
+        cases: list[tuple[str, dict[str, Any], dict[str, Any], str, str]] = [
             ("countries", {"name": "Malaysia", "code": "MY"}, {"name": "Malaysia (Federation)"}, "country Malaysia (MY)", "Country: Malaysia"),
             ("sites", {"name": "Penang Adventist", "ocn": "OCN1"}, {"address": "465 Jalan Burma"}, "site Penang Adventist (OCN1)", "Site: Penang Adventist (OCN1)"),
             ("customers", {"name": "KPJ Healthcare"}, {"name": "KPJ Healthcare Berhad"}, "customer KPJ Healthcare", "Customer: KPJ Healthcare"),
@@ -352,6 +361,7 @@ class LoggingFailureTests(AuditTestCase):
 
     def test_log_action_on_its_own(self):
         entry = log_action(None, A.LOGIN, description="System event")
+        assert entry is not None
         self.assertEqual((entry.actor, entry.actor_username, entry.ip_address, entry.target_type), (None, "", "", ""))
         with patch("audit.log.AuditLogEntry.objects.create", side_effect=RuntimeError), self.assertLogs("audit.log", "ERROR"):
             self.assertIsNone(log_action(self.syed, A.LOGIN, description="x"))
@@ -372,14 +382,14 @@ class AuditApiTests(AuditTestCase):
     def setUp(self):
         super().setUp()
         base = dict(target_type="ticket", target_label="Ticket #1")
-        self.a = log_action(self.syed, A.TICKET_CREATED, target_id="1", description="Syed Hussain created ticket #1", **base)
-        self.b = log_action(self.naleefa, A.TICKET_CLOSED, target_id="1", description="Naleefa Kareem closed ticket #1", **base)
-        self.c = log_action(self.naleefa, A.LOGIN, target=self.naleefa, description="Naleefa Kareem signed in")
+        self.a = logged(self.syed, A.TICKET_CREATED, target_id="1", description="Syed Hussain created ticket #1", **base)
+        self.b = logged(self.naleefa, A.TICKET_CLOSED, target_id="1", description="Naleefa Kareem closed ticket #1", **base)
+        self.c = logged(self.naleefa, A.LOGIN, target=self.naleefa, description="Naleefa Kareem signed in")
         # Two older ones: 40 days ago (outside the default 30) and 10 days ago.
         with patch("django.utils.timezone.now", return_value=NOW - timedelta(days=40)):
-            self.old = log_action(self.syed, A.LOGIN, target=self.syed, description="Syed Hussain signed in")
+            self.old = logged(self.syed, A.LOGIN, target=self.syed, description="Syed Hussain signed in")
         with patch("django.utils.timezone.now", return_value=NOW - timedelta(days=10)):
-            self.recent = log_action(self.syed, A.LOGOUT, target=self.syed, description="Syed Hussain signed out")
+            self.recent = logged(self.syed, A.LOGOUT, target=self.syed, description="Syed Hussain signed out")
         self.client.force_authenticate(self.admin)
 
     def ids(self, **params):

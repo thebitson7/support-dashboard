@@ -1,0 +1,24 @@
+# Tool configuration for the Django backend (it isn't packaged).
+
+[tool.mypy]
+# Pragmatic, not strict: Django and DRF are dynamic enough that full --strict
+# costs more annotations than it catches bugs. This checks every function
+# body (typed or not), keeps stub-level Django/DRF awareness through the
+# plugins, and flags unused or unexplained suppressions.
+#
+# Deliberately off: warn_unreachable and the truthy-bool / redundant-expr
+# codes. The stubs type a model's non-null fields as never None, but on an
+# unsaved instance they can be, so correct guards such as
+# `if self.start_at and self.end_at` get reported as dead code.
+python_version = "3.12"
+plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
+check_untyped_defs = true
+no_implicit_optional = true
+strict_equality = true
+warn_redundant_casts = true
+warn_unused_ignores = true
+enable_error_code = ["ignore-without-code"]
+exclude = ["^venv/", "/migrations/"]
+
+[tool.django-stubs]
+django_settings_module = "config.settings"

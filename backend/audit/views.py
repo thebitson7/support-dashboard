@@ -10,6 +10,14 @@ from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import F, Q
 from django.utils.dateparse import parse_date
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import (
+    OpenApiParameter,
+    OpenApiResponse,
+    extend_schema,
+    extend_schema_view,
+    inline_serializer,
+)
 from rest_framework import serializers
 from rest_framework.exceptions import ValidationError
 from rest_framework.generics import ListAPIView
@@ -40,6 +48,17 @@ class AuditPagination(PageNumberPagination):
     page_size = 50
     page_size_query_param = "page_size"
     max_page_size = 200
+
+    def get_paginated_response_schema(self, schema):
+        # Documents the range AuditLogListView.list() adds to each page.
+        response = super().get_paginated_response_schema(schema)
+        for name in ("start_date", "end_date"):
+            response["properties"][name] = {
+                "type": "string",
+                "format": "date",
+                "description": "The date range actually applied (defaults filled in).",
+            }
+        return response
 
 
 class AuditLogEntrySerializer(serializers.ModelSerializer):
@@ -134,12 +153,45 @@ def filtered_entries(request):
     field = F(ORDERINGS[key])
     order = field.desc() if descending else field.asc()
     # Ties: newest first, except when sorting by time itself (then the same direction).
-    tiebreak = ("-id",) if key != "created_at" or descending else ("id",)
+    tiebreak: tuple[str, ...] = ("-id",) if key != "created_at" or descending else ("id",)
     if key != "created_at":
         tiebreak = ("-created_at", *tiebreak)
     return qs.order_by(order, *tiebreak), start, end
 
 
+# --- API documentation (drf-spectacular) ------------------------------------------
+
+AUDIT_FILTERS = [
+    OpenApiParameter(
+        "start_date",
+        OpenApiTypes.DATE,
+        description=f"Inclusive, in the admin's own zone. Default: {DEFAULT_DAYS - 1} days before `end_date`.",
+    ),
+    OpenApiParameter(
+        "end_date", OpenApiTypes.DATE, description="Inclusive, in the admin's own zone. Default: today."
+    ),
+    OpenApiParameter("actor", int, description="Only entries by this user id."),
+    OpenApiParameter(
+        "action",
+        str,
+        many=True,
+        explode=False,
+        enum=AuditLogEntry.Action.values,
+        description="One or more actions, comma-separated (e.g. `login,logout`). Labels and groups: `/api/audit/logs/actions/`.",
+    ),
+    OpenApiParameter("target_type", str, description="e.g. `ticket`, `work_log`, `site`, `user`."),
+    OpenApiParameter("target_id", str, description="With `target_type`: one record's history."),
+    OpenApiParameter("search", str, description="Case-insensitive match on description, username or target."),
+    OpenApiParameter(
+        "ordering",
+        str,
+        enum=[f"{sign}{key}" for key in ORDERINGS for sign in ("", "-")],
+        description="`-` prefix for descending. Default `-created_at` (newest first).",
+    ),
+]
+
+
+@extend_schema_view(get=extend_schema(summary="List audit log entries (admin only)", parameters=AUDIT_FILTERS))
 class AuditLogListView(ListAPIView):
     """GET: the audit log, newest first by default (see filtered_entries)."""
 
@@ -159,6 +211,21 @@ class AuditLogListView(ListAPIView):
         return response
 
 
+@extend_schema(
+    summary="Export the audit log as CSV (admin only)",
+    parameters=[
+        *AUDIT_FILTERS,
+        OpenApiParameter(
+            "tz", str, description="IANA zone for the timestamps. Default: the admin's profile zone."
+        ),
+    ],
+    request=None,
+    responses={
+        (200, "text/csv"): OpenApiResponse(OpenApiTypes.BINARY, description="A UTF-8 CSV file (attachment)."),
+        400: OpenApiResponse(description="An invalid filter, named in the body."),
+        429: OpenApiResponse(description="Export rate limit reached; see `Retry-After`."),
+    },
+)
 class AuditLogExportView(APIView):
     """
     GET: the same filtered log as CSV, every matching row, rate limited like
@@ -207,6 +274,19 @@ class AuditLogExportView(APIView):
         return csv_response(f"audit-log_{start}_{end}.csv", header, rows)
 
 
+@extend_schema(
+    summary="List audit actions (admin only)",
+    request=None,
+    responses=inline_serializer(
+        "AuditAction",
+        {
+            "value": serializers.ChoiceField(choices=AuditLogEntry.Action.choices),
+            "label": serializers.CharField(),
+            "group": serializers.ChoiceField(choices=list(ACTION_GROUPS)),
+        },
+        many=True,
+    ),
+)
 class AuditActionListView(APIView):
     """GET: every action the log records, with its label and group, for the filter."""
 

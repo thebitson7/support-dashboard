@@ -177,7 +177,7 @@ class WorkAcrossLayersTests(APITestCase):
         # ...but their history is where it was.
         self.assertEqual(sum(self.minutes(e) for e in self.job_sheet(self.syed)), 90)
         self.assertEqual(self.today(self.syed)["ams_minutes"], 90)
-        drill = self.client.get("/api/reports/team-activity/", {**MARCH, "user_id": self.syed.pk}).json()
+        drill = self.client.get("/api/reports/team-activity/", {**MARCH, "user_id": str(self.syed.pk)}).json()
         self.assertEqual((drill["member"]["is_active"], drill["member"]["ams_minutes"]), (False, 90))
         ticket = self.client.get(f"/api/tickets/{ticket_id}/").json()
         self.assertEqual(ticket["assigned_to"]["username"], "syed")

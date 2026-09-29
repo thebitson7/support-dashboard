@@ -8,6 +8,8 @@ from datetime import date, timedelta
 
 from django.db.models import Q
 from django.utils.dateparse import parse_date
+from drf_spectacular.types import OpenApiTypes
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, PolymorphicProxySerializer, extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
@@ -19,6 +21,7 @@ from accounts.throttling import ExportRateThrottle
 from accounts.serializers import UserSummarySerializer
 from core.exports import csv_response, text_cell
 from working_hours.models import WorkLogEntry
+from working_hours.openapi import MemberActivity, TeamActivity
 from working_hours.periods import local_today
 from working_hours.serializers import WorkLogEntrySerializer
 from working_hours.sync import ticket_reference
@@ -84,6 +87,29 @@ def _member(user, totals: Totals) -> dict:
     return {"user": UserSummarySerializer(user).data, "is_active": user.is_active, **totals.as_dict()}
 
 
+REPORT_FILTERS = [
+    OpenApiParameter("start_date", OpenApiTypes.DATE, description="Inclusive. Default: this month's first day."),
+    OpenApiParameter(
+        "end_date",
+        OpenApiTypes.DATE,
+        description=f"Inclusive. Default: this month's last day. At most {MAX_RANGE_DAYS} days in all.",
+    ),
+    OpenApiParameter(
+        "user_id", int, description="One person's drill-down (deactivated users included); omit for the team."
+    ),
+]
+
+
+@extend_schema(
+    summary="Team activity report (admin only)",
+    parameters=REPORT_FILTERS,
+    request=None,
+    responses=PolymorphicProxySerializer(
+        component_name="TeamActivityReport",
+        serializers=[TeamActivity, MemberActivity],
+        resource_type_field_name=None,
+    ),
+)
 class TeamActivityView(APIView):
     """
     GET ?start_date=&end_date=&user_id=  (admin role only)
@@ -138,6 +164,16 @@ class TeamActivityView(APIView):
         }
 
 
+@extend_schema(
+    summary="Export team activity as CSV (admin only)",
+    parameters=REPORT_FILTERS,
+    request=None,
+    responses={
+        (200, "text/csv"): OpenApiResponse(OpenApiTypes.BINARY, description="A UTF-8 CSV file (attachment)."),
+        400: OpenApiResponse(description="An invalid filter, named in the body."),
+        429: OpenApiResponse(description="Export rate limit reached; see `Retry-After`."),
+    },
+)
 class TeamActivityExportView(APIView):
     """
     GET ?start_date=&end_date=&user_id=  (admin role only): the same range

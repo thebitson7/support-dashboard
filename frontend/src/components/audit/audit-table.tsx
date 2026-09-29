@@ -288,8 +288,9 @@ export function AuditTable({
     const name = person?.name ?? (entry.actor_username || null);
     const expanded = open.has(entry.id);
     const detailsId = `audit-entry-${entry.id}`;
+    const previous = rows[index - 1];
     const newDay =
-      grouped && (index === 0 || dayKey(rows[index - 1].created_at) !== dayKey(entry.created_at));
+      grouped && (!previous || dayKey(previous.created_at) !== dayKey(entry.created_at));
     const hasTarget = Boolean(entry.target_type && entry.target_id);
     return (
       <Fragment key={entry.id}>

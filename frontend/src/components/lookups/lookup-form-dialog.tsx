@@ -347,7 +347,10 @@ export function LookupFormDialog<Row extends LookupRow>({
       >
         <DialogContent
           className="max-h-[calc(100dvh-2rem)] w-[min(38rem,calc(100vw-2rem))]"
-          initialFocus={() => document.getElementById(fieldId(config.fields[0].name))}
+          initialFocus={() => {
+            const first = config.fields[0];
+            return first ? document.getElementById(fieldId(first.name)) : true;
+          }}
         >
           <form
             onSubmit={submit}

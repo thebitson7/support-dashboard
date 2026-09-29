@@ -6,6 +6,8 @@ serializer; the entries themselves go through audit.log.log_action.
 
 from collections import Counter
 
+from django.db.models import Field
+
 from audit import text
 from audit.log import log_action, person
 from audit.models import AuditLogEntry
@@ -13,6 +15,14 @@ from audit.models import AuditLogEntry
 from .models import Ticket, TicketActivity
 
 A = AuditLogEntry.Action
+
+
+def _field(name: str) -> Field:
+    """A tracked Ticket field (always a concrete field, never a reverse relation)."""
+    field = Ticket._meta.get_field(name)
+    if not isinstance(field, Field):
+        raise TypeError(f"Ticket.{name} is not a concrete field and can't be tracked.")
+    return field
 
 VERIFICATION_FIELDS = (
     "resolution_verified_by",
@@ -61,7 +71,7 @@ def snapshot(ticket: Ticket) -> dict:
     """The tracked fields' current values (ids for relations), to diff an edit."""
     values = {}
     for name in TRACKED_FIELDS:
-        field = Ticket._meta.get_field(name)
+        field = _field(name)
         if name == "pdf_attachment":
             values[name] = ticket.pdf_attachment.name or ""
         elif field.is_relation:
@@ -73,7 +83,7 @@ def snapshot(ticket: Ticket) -> dict:
 
 
 def _label(name: str) -> str:
-    return str(Ticket._meta.get_field(name).verbose_name).replace("cms", "CMS").replace("pdf", "PDF")
+    return str(_field(name).verbose_name).replace("cms", "CMS").replace("pdf", "PDF")
 
 
 # --- Activities -----------------------------------------------------------------

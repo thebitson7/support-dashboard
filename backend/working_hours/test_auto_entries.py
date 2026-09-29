@@ -341,5 +341,5 @@ class JobSheetMatchesTheSummaryTests(AutoEntryTestCase):
 
         # An admin sees the same day for her.
         self.client.force_authenticate(self.admin)
-        as_admin = self.client.get(ENTRIES_URL, {"date": "2026-03-04", "user_id": self.alice.pk}).json()
+        as_admin = self.client.get(ENTRIES_URL, {"date": "2026-03-04", "user_id": str(self.alice.pk)}).json()
         self.assertEqual(as_admin, day)

@@ -50,7 +50,7 @@ class RateLimitUnavailable(APIException):
     default_code = "rate_limit_unavailable"
 
 
-class WindowRateMixin:
+class WindowRateMixin(SimpleRateThrottle):
     """
     Rates as DRF's "5/m", or with a window size, e.g. "5/5m", "30/2h".
 

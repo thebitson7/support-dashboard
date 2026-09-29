@@ -18,9 +18,11 @@ const ALL = LOWER + UPPER + DIGITS + SYMBOLS;
 function randomIndex(n: number): number {
   const limit = Math.floor(0x1_0000_0000 / n) * n;
   const buffer = new Uint32Array(1);
-  do crypto.getRandomValues(buffer);
-  while (buffer[0] >= limit);
-  return buffer[0] % n;
+  for (;;) {
+    // One element, so the default never applies; it only satisfies the type.
+    const [value = 0] = crypto.getRandomValues(buffer);
+    if (value < limit) return value % n;
+  }
 }
 
 /**

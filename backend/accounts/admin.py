@@ -1,3 +1,5 @@
+"""Django admin (/admin/) for users: the stock UserAdmin plus the role and time zone."""
+
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
@@ -10,5 +12,6 @@ class UserAdmin(BaseUserAdmin):
         "username", "first_name", "last_name", "role", "timezone", "is_staff", "is_active"
     )
     list_filter = ("role", *BaseUserAdmin.list_filter)
-    fieldsets = (*BaseUserAdmin.fieldsets, ("Role & locale", {"fields": ("role", "timezone")}))
+    # `or ()`: fieldsets is Optional on ModelAdmin; UserAdmin always sets it.
+    fieldsets = (*(BaseUserAdmin.fieldsets or ()), ("Role & locale", {"fields": ("role", "timezone")}))
     add_fieldsets = (*BaseUserAdmin.add_fieldsets, ("Role & locale", {"fields": ("role", "timezone")}))

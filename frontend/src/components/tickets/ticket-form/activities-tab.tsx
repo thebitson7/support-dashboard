@@ -403,16 +403,17 @@ export function ActivitiesTab({
               className="grid gap-1 border-t border-border bg-destructive/5 px-3 py-2 text-xs font-medium text-destructive"
               role="alert"
             >
-              {activities.map((a, index) =>
-                serverErrors[a.key]
-                  ? Object.values(serverErrors[a.key]).map((message) => (
+              {activities.map((a, index) => {
+                const errors = serverErrors[a.key];
+                return errors
+                  ? Object.values(errors).map((message) => (
                       <li key={`${a.key}-${message}`} className="flex items-center gap-1.5">
                         <CircleAlert className="size-3.5 shrink-0" aria-hidden />
                         Activity {index + 1}: {message}
                       </li>
                     ))
-                  : null,
-              )}
+                  : null;
+              })}
             </ul>
           )}
         </div>

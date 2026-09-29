@@ -35,7 +35,8 @@ function toInputDate(ms: number) {
 /** "YYYY-MM-DD" -> epoch ms at local midnight (or at the day's last ms with `endOfDay`). */
 function fromInputDate(value: string, endOfDay = false) {
   if (!value) return NaN;
-  const [y, m, d] = value.split("-").map(Number);
+  // A malformed value leaves parts NaN, so the result is NaN, never a wrong day.
+  const [y = NaN, m = NaN, d = NaN] = value.split("-").map(Number);
   return endOfDay
     ? new Date(y, m - 1, d, 23, 59, 59, 999).getTime()
     : new Date(y, m - 1, d).getTime();

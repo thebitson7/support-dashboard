@@ -178,14 +178,14 @@ class AuditFlowTests(APITestCase):
         self.client.post("/api/lookups/customers/", {"name": "KPJ Healthcare"}, format="json")
         today = timezone.localdate(timezone=self.admin.tzinfo).isoformat()
         filters = {
-            "actor": self.ravi.pk,
+            "actor": str(self.ravi.pk),
             "action": "work_log_created,login",
             "search": "Non-AMS",
             "start_date": today,
             "end_date": today,
             "ordering": "created_at",
         }
-        listed = self.client.get(LOGS, {**filters, "page_size": 200}).json()
+        listed = self.client.get(LOGS, {**filters, "page_size": "200"}).json()
         exported = self.client.get(f"{LOGS}export/", {**filters, "tz": "UTC"})
         self.assertEqual(exported.status_code, 200)
         rows = list(csv.DictReader(io.StringIO(exported.content.decode("utf-8").lstrip("﻿"))))

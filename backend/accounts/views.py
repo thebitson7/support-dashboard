@@ -1,8 +1,9 @@
 from django.db.models import Q, Value
 from django.db.models.functions import Concat
+from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view
 from rest_framework.exceptions import AuthenticationFailed, Throttled
 from rest_framework.filters import OrderingFilter, SearchFilter
-from rest_framework.generics import ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
+from rest_framework.generics import GenericAPIView, ListAPIView, ListCreateAPIView, RetrieveUpdateAPIView
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -73,7 +74,8 @@ class LogoutView(TokenBlacklistView):
         user = None
         try:
             token = RefreshToken(request.data.get("refresh", ""))
-            user = User.objects.filter(pk=token.payload.get(jwt_settings.USER_ID_CLAIM)).first()
+            user_id = token.payload.get(jwt_settings.USER_ID_CLAIM)
+            user = User.objects.filter(pk=user_id).first() if user_id is not None else None
         except (TokenError, AttributeError, TypeError):
             pass  # invalid or already revoked: the view below answers 401
         response = super().post(request, *args, **kwargs)
@@ -89,6 +91,7 @@ class LogoutView(TokenBlacklistView):
         return response
 
 
+@extend_schema(summary="The signed-in user", responses=UserSummarySerializer)
 class MeView(APIView):
     """The identity behind the current access token."""
 
@@ -96,6 +99,12 @@ class MeView(APIView):
         return Response(UserSummarySerializer(request.user).data)
 
 
+@extend_schema_view(
+    get=extend_schema(
+        summary="Search active users",
+        parameters=[OpenApiParameter("q", str, description="Username or full name; omit for the first 20.")],
+    )
+)
 class UserSearchView(ListAPIView):
     """
     GET ?q= : active users whose username or name matches (max 20). Open to
@@ -118,7 +127,7 @@ class UserSearchView(ListAPIView):
         return qs.order_by("first_name", "last_name", "username")[:USER_SEARCH_LIMIT]
 
 
-class AdminAccessMixin:
+class AdminAccessMixin(GenericAPIView):
     """Administration: admin role only, writes rate limited (per admin)."""
 
     permission_classes = [IsAuthenticated, IsAdminRole]

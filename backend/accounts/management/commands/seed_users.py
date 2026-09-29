@@ -9,7 +9,7 @@ DEV_PASSWORD = "password123"
 
 # Staff names are the support team's. The time zones differ on purpose so
 # "today" boundaries can be seen to differ.
-DEV_USERS = [
+DEV_USERS: list[dict[str, object]] = [
     {"username": "admin", "first_name": "Admin", "last_name": "User", "role": User.Role.ADMIN,
      "is_staff": True, "is_superuser": True},
     {"username": "syed", "first_name": "Syed", "last_name": "Hussain", "role": User.Role.STAFF,

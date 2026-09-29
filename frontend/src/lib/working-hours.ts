@@ -38,7 +38,7 @@ export const userQuery = (userId: string | null) =>
 
 /** "2026-09-24" -> a local Date (no UTC shift, unlike `new Date(iso)`). */
 function parseDay(iso: string): Date {
-  const [y, m, d] = iso.split("-").map(Number);
+  const [y = NaN, m = NaN, d = NaN] = iso.split("-").map(Number);
   return new Date(y, m - 1, d);
 }
 
