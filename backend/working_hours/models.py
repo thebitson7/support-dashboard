@@ -28,9 +28,7 @@ class WorkLogEntry(models.Model):
 
     # PROTECT, like every user reference in the project: people who have
     # logged hours are deactivated, never deleted (which would erase history).
-    user = models.ForeignKey(
-        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="work_logs"
-    )
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="work_logs")
     date = models.DateField()
     # Both on `date`: an entry never crosses midnight (see the serializer).
     start_time = models.TimeField()

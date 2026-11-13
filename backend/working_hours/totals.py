@@ -34,9 +34,7 @@ def total_expressions(prefix: str = "", within: Q | None = None) -> dict:
     restricts which entries count (e.g. a date range), applied to all four.
     """
     within = within or Q()
-    span = ExpressionWrapper(
-        F(f"{prefix}end_time") - F(f"{prefix}start_time"), output_field=DurationField()
-    )
+    span = ExpressionWrapper(F(f"{prefix}end_time") - F(f"{prefix}start_time"), output_field=DurationField())
     category = f"{prefix}category"
     return {
         "total": Sum(span, filter=within),

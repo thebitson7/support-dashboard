@@ -26,7 +26,6 @@ import { ExportButton } from "@/components/common/export-button";
 import { SortIcon } from "@/components/common/sort-icon";
 import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { CategoryPill, FromTicketBadge } from "@/components/job-sheets/day-entries";
-import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -559,7 +558,7 @@ function MemberDetail({
                     {formatDateLong(day.date)}
                     <span className="text-caption font-normal tabular-nums">
                       {" "}
-                      · {formatMinutes(total)}
+                      · {formatDuration(total)}
                     </span>
                   </h4>
                   <Link
@@ -582,7 +581,7 @@ function MemberDetail({
                           {" · "}
                         </span>
                         <span className="sr-only">, </span>
-                        <span className="font-semibold">{formatMinutes(entryMinutes(entry))}</span>
+                        <span className="font-semibold">{formatDuration(entryMinutes(entry))}</span>
                       </span>
                       <span
                         className={cn(

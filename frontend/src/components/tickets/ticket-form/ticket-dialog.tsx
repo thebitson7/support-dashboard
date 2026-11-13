@@ -72,12 +72,14 @@ function TicketForm({
   mode,
   codes,
   guardRef,
+  initialTab = "ticket",
   onCancel,
   onSaved,
 }: {
   mode: Mode;
   codes: WorkDoneCodesState;
   guardRef: RefObject<FormGuard>;
+  initialTab?: TabId;
   onCancel: () => void;
   onSaved: (message: string, description: string) => void;
 }) {
@@ -96,7 +98,7 @@ function TicketForm({
   const [dirty, setDirty] = useState(false);
   const [serverErrors, setServerErrors] = useState<ServerErrors>(NO_SERVER_ERRORS);
   const [submitting, setSubmitting] = useState(false);
-  const [tab, setTab] = useState<TabId>("ticket");
+  const [tab, setTab] = useState<TabId>(initialTab);
   const [direction, setDirection] = useState(1);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const inFlight = useRef(false);
@@ -363,10 +365,10 @@ function TicketForm({
             {editing
               ? submitting
                 ? "Saving…"
-                : "Save Changes"
+                : "Save changes"
               : submitting
                 ? "Creating…"
-                : "Create Ticket"}
+                : "Create ticket"}
           </Button>
         </div>
       </footer>
@@ -441,12 +443,21 @@ export function TicketDialog({
   open,
   onOpenChange,
   ticketId,
+  initialTab,
   onSaved,
+  onLoadError,
 }: {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   ticketId?: number;
+  /** The tab it opens on (default: Ticket). */
+  initialTab?: TabId;
   onSaved: () => void;
+  /**
+   * Edit mode: called when the ticket can't be loaded. Without it the dialog
+   * shows its own error (with retry); a deep link uses it to toast and close.
+   */
+  onLoadError?: (error: ApiError) => void;
 }) {
   const isEdit = ticketId !== undefined;
   // The page remounts this dialog (new `key`) for every opening, so "opened
@@ -457,6 +468,11 @@ export function TicketDialog({
   const codes = useApiGet<ApiWorkDoneCode[]>(active ? "/tickets/work-done-codes/" : null);
   const guardRef = useRef<FormGuard>({ dirty: false, submitting: false });
   const [confirmDiscard, setConfirmDiscard] = useState(false);
+
+  const loadError = detail.error;
+  useEffect(() => {
+    if (loadError && onLoadError) onLoadError(loadError);
+  }, [loadError, onLoadError]);
 
   const requestClose = () => {
     if (guardRef.current.submitting) return;
@@ -485,6 +501,7 @@ export function TicketDialog({
         mode={{ kind: "create" }}
         codes={codesState}
         guardRef={guardRef}
+        initialTab={initialTab}
         onCancel={requestClose}
         onSaved={saved}
       />
@@ -496,6 +513,7 @@ export function TicketDialog({
         mode={{ kind: "edit", ticket }}
         codes={codesState}
         guardRef={guardRef}
+        initialTab={initialTab}
         onCancel={requestClose}
         onSaved={saved}
       />
@@ -529,11 +547,14 @@ export function TicketDialog({
         <DialogContent
           className="h-[min(56rem,calc(100dvh-2rem))] w-[min(68rem,calc(100vw-2rem))]"
           // The form's first field gets focus (not the close button) once it exists.
-          initialFocus={() => document.getElementById(fieldId("cms_next_ticket_no"))}
+          initialFocus={() =>
+            document.getElementById(fieldId("cms_next_ticket_no")) ??
+            document.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]')
+          }
         >
           <header className="flex items-start justify-between gap-4 border-b border-border px-6 pt-5 pb-4">
             <div className="grid gap-1">
-              <DialogTitle>{isEdit ? "Edit Ticket" : "New Ticket"}</DialogTitle>
+              <DialogTitle>{isEdit ? "Edit ticket" : "New ticket"}</DialogTitle>
               <DialogDescription className="flex flex-wrap items-center gap-2">
                 {!isEdit ? (
                   "Log an AMS ticket with its activities and, if resolved, its verification."

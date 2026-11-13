@@ -12,7 +12,7 @@ from audit import text
 from audit.log import log_action, person
 from audit.models import AuditLogEntry
 
-from .models import Ticket, TicketActivity
+from .models import VERIFICATION_FIELDS, Ticket, TicketActivity, ticket_label
 
 A = AuditLogEntry.Action
 
@@ -24,13 +24,7 @@ def _field(name: str) -> Field:
         raise TypeError(f"Ticket.{name} is not a concrete field and can't be tracked.")
     return field
 
-VERIFICATION_FIELDS = (
-    "resolution_verified_by",
-    "resolution_verified_on",
-    "cms_closed_by",
-    "cms_closed_on",
-    "service_closed_date",
-)
+
 # Compared on edit. Foreign keys by id; the attachment by file name.
 TRACKED_FIELDS = (
     "received_at",
@@ -61,10 +55,6 @@ ACTIVITY_KEYS = (
     "is_likely_cause",
     "resolved_by_id",
 )
-
-
-def ticket_label(ticket: Ticket) -> str:
-    return f"Ticket #{ticket.cms_next_ticket_no}"
 
 
 def snapshot(ticket: Ticket) -> dict:
@@ -137,7 +127,9 @@ def log_created(ticket: Ticket, request, activity_count: int) -> None:
     )
 
 
-def log_updated(ticket: Ticket, request, before: dict, old_activities: list[tuple] | None, new_activities: list[tuple] | None) -> None:
+def log_updated(
+    ticket: Ticket, request, before: dict, old_activities: list[tuple] | None, new_activities: list[tuple] | None
+) -> None:
     """
     One entry per kind of change: the status transition (closed / reopened),
     other field edits (named), then each activity genuinely added or removed.

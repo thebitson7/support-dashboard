@@ -7,10 +7,9 @@ import { cn } from "cn";
 
 import { useAuth, type AuthUser } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader } from "@/components/layout/page-header";
 import { TeamActivity } from "@/components/reports/team-activity";
 import { TicketsPage } from "@/components/tickets/tickets-page";
-import { Toaster } from "@/components/ui/sonner";
 
 const TABS = [
   { id: "tickets", label: "All Tickets" },
@@ -32,25 +31,23 @@ export default function ReportsPage() {
     <MotionConfig reducedMotion="user">
       <div className="flex w-full flex-1 flex-col gap-5">
         <motion.div
-          className="grid gap-3"
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.5, ease: EASE }}
         >
-          <Breadcrumb items={[{ label: "Reports" }]} />
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Reports</h1>
-            <p className="text-label">
-              {isAdmin
+          <PageHeader
+            trail={[{ label: "Reports" }]}
+            title="Reports"
+            description={
+              isAdmin
                 ? "Every ticket, and the team's logged work over any date range."
-                : "Every ticket, searchable and exportable."}
-            </p>
-          </div>
+                : "Every ticket, searchable and exportable."
+            }
+          />
         </motion.div>
 
         {isAdmin ? <AdminReports viewer={user} /> : <TicketsPage readOnly />}
       </div>
-      <Toaster position="bottom-right" />
     </MotionConfig>
   );
 }

@@ -17,7 +17,7 @@ import { EASE } from "@/lib/motion";
 import { SortIcon } from "@/components/common/sort-icon";
 import { TruncatedText } from "@/components/dashboard/bits";
 import { Dash } from "@/components/tickets/cells";
-import { Badge } from "@/components/ui/badge";
+import { ToneBadge } from "@/components/common/tone-badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 
@@ -40,27 +40,9 @@ export type Person = { name: string; initials: string };
 
 export const PAGE_SIZE = 50;
 
-/** Same shape as the ticket Status and Lookups Active badges: dot + tinted pill. */
+/** An action as the shared status pill; neutral actions (sign-ins…) in the muted tone. */
 function ActionBadge({ action, label }: { action: string; label: string }) {
-  const token = TONE_TOKEN[toneOf(action)];
-  const neutral = toneOf(action) === "neutral";
-  return (
-    <Badge
-      variant="outline"
-      className="gap-1.5 border-0 font-semibold"
-      style={{
-        color: neutral
-          ? "var(--muted-foreground)"
-          : `color-mix(in oklab, ${token}, var(--foreground) 30%)`,
-        backgroundColor: neutral
-          ? "var(--muted)"
-          : `color-mix(in oklab, ${token} 13%, transparent)`,
-      }}
-    >
-      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: token }} />
-      {label}
-    </Badge>
-  );
+  return <ToneBadge tone={TONE_TOKEN[toneOf(action)]}>{label}</ToneBadge>;
 }
 
 function Avatar({ person }: { person: Person | null }) {

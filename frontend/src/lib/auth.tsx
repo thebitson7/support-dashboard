@@ -4,6 +4,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import type { ReactNode } from "react";
 
 import { ApiError, apiGet, apiPost, onSessionExpired } from "@/lib/api";
+import { clearAcknowledgement } from "@/lib/attention";
 
 export type Role = "staff" | "admin";
 
@@ -66,6 +67,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       username,
       password,
     });
+    // A new sign-in shows the "tickets waiting to be closed" alert again.
+    clearAcknowledgement();
     setUser(me);
     return me;
   }, []);
@@ -77,6 +80,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // The route clears the cookies even when revocation fails; nothing more
       // the UI can do, so sign out locally regardless.
     } finally {
+      clearAcknowledgement();
       setUser(null);
     }
   }, []);

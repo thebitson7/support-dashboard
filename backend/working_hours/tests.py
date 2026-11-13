@@ -16,9 +16,7 @@ def make_entry(*, user, date, category, hours, start=time(9, 0)):
     """An entry lasting `hours` from `start` (entries are logged as start/end times)."""
     end = datetime.combine(date, start) + timedelta(minutes=round(float(hours) * 60))
     assert end.date() == date, "a test entry must not cross midnight"
-    return WorkLogEntry.objects.create(
-        user=user, date=date, category=category, start_time=start, end_time=end.time()
-    )
+    return WorkLogEntry.objects.create(user=user, date=date, category=category, start_time=start, end_time=end.time())
 
 
 class WorkingHoursPermissionTests(APITestCase):
@@ -31,12 +29,8 @@ class WorkingHoursPermissionTests(APITestCase):
         # Everyone here shares the default zone, so this is "today" for every
         # viewer (the server's UTC date would differ for part of each day).
         today = local_today(self.alice)
-        make_entry(
-            user=self.alice, date=today, category="ams", hours=Decimal("5.50")
-        )
-        make_entry(
-            user=self.alice, date=today, category="non_ams", hours=Decimal("2.25")
-        )
+        make_entry(user=self.alice, date=today, category="ams", hours=Decimal("5.50"))
+        make_entry(user=self.alice, date=today, category="non_ams", hours=Decimal("2.25"))
         make_entry(user=self.bob, date=today, category="ams", hours=Decimal(3))
 
     def periods(self, response):
@@ -162,9 +156,7 @@ class PeriodBoundaryTests(APITestCase):
     def test_entries_outside_a_period_are_not_counted(self):
         user = User.objects.create_user("carol", password="pw")
         today = local_today(user)
-        make_entry(
-            user=user, date=today - timedelta(days=400), category="ams", hours=Decimal(8)
-        )
+        make_entry(user=user, date=today - timedelta(days=400), category="ams", hours=Decimal(8))
         self.client.force_authenticate(user)
 
         periods = self.client.get(SUMMARY_URL).json()["periods"]
@@ -335,9 +327,7 @@ class StaffEntryTests(EntryTestCase):
     def test_edits_and_deletes_own_entry(self):
         entry_id = self.log(span("09:00", "11:00")).json()["id"]
 
-        edited = self.client.patch(
-            entry_url(entry_id), {"end_time": "12:45", "category": "non_ams"}, format="json"
-        )
+        edited = self.client.patch(entry_url(entry_id), {"end_time": "12:45", "category": "non_ams"}, format="json")
         self.assertEqual(edited.status_code, 200, edited.content)
         self.assertEqual(
             (edited.json()["end_time"], edited.json()["hours"], edited.json()["category"]),
@@ -358,9 +348,7 @@ class StaffEntryTests(EntryTestCase):
         self.assertEqual(self.log(span("09:00", "10:00"), user_id=self.bob.pk).status_code, 403)
         self.assertEqual(self.client.get(ENTRIES_URL, {"user_id": self.bob.pk}).status_code, 403)
         self.assertEqual(self.client.get(entry_url(bobs.pk)).status_code, 403)
-        self.assertEqual(
-            self.client.patch(entry_url(bobs.pk), {"end_time": "10:00"}, format="json").status_code, 403
-        )
+        self.assertEqual(self.client.patch(entry_url(bobs.pk), {"end_time": "10:00"}, format="json").status_code, 403)
         self.assertEqual(self.client.delete(entry_url(bobs.pk)).status_code, 403)
         # Nothing was logged for, or changed on, Bob.
         self.assertEqual(list(WorkLogEntry.objects.values_list("user", "hours")), [(self.bob.pk, Decimal(4))])
@@ -412,9 +400,7 @@ class AdminEntryTests(EntryTestCase):
         self.assertEqual(self.client.get(entry_url(entry.pk)).status_code, 200)
         # ...but nothing new is logged for, or changed on, a deactivated account.
         self.assertEqual(self.log(span("09:00", "10:00"), user_id=self.bob.pk).status_code, 404)
-        self.assertEqual(
-            self.client.patch(entry_url(entry.pk), {"end_time": "10:00"}, format="json").status_code, 404
-        )
+        self.assertEqual(self.client.patch(entry_url(entry.pk), {"end_time": "10:00"}, format="json").status_code, 404)
         self.assertEqual(self.client.delete(entry_url(entry.pk)).status_code, 404)
         self.assertEqual(WorkLogEntry.objects.get().hours, 2)
 

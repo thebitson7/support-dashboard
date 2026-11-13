@@ -53,7 +53,12 @@ def endpoints(tc):
         ("sites", tc.site, {"name": "New Lab", "ocn": "OCN1-801-00", "country": tc.my.pk}, {"address": "1 Jalan"}),
         ("customers", tc.customer, {"name": "KPJ Healthcare"}, {"name": "KPJ Healthcare Berhad"}),
         ("work-done-codes", tc.code, {"code": "xyz", "description": "Something"}, {"is_active": False}),
-        ("holidays", tc.holiday, {"name": "Deepavali", "date": "2026-11-08", "is_recurring_annually": False, "country": tc.my.pk}, {"name": "New Year"}),
+        (
+            "holidays",
+            tc.holiday,
+            {"name": "Deepavali", "date": "2026-11-08", "is_recurring_annually": False, "country": tc.my.pk},
+            {"name": "New Year"},
+        ),
     ]
 
 
@@ -72,9 +77,7 @@ class PermissionTests(LookupTestCase):
                 self.assertEqual(self.client.get(f"{BASE}{path}/").status_code, 200)
                 self.assertEqual(self.client.get(f"{BASE}{path}/{obj.pk}/").status_code, 200)
                 self.assertEqual(self.client.post(f"{BASE}{path}/", create, format="json").status_code, 403)
-                self.assertEqual(
-                    self.client.patch(f"{BASE}{path}/{obj.pk}/", patch, format="json").status_code, 403
-                )
+                self.assertEqual(self.client.patch(f"{BASE}{path}/{obj.pk}/", patch, format="json").status_code, 403)
                 self.assertEqual(self.client.delete(f"{BASE}{path}/{obj.pk}/").status_code, 403)
                 self.assertTrue(type(obj).objects.filter(pk=obj.pk).exists())
 
@@ -283,7 +286,9 @@ class ValidationTests(LookupTestCase):
             {"name": "Deepavali", "date": "2026-11-08", "is_recurring_annually": False, "country": self.my.pk},
         )
         body = dated.json()
-        self.assertEqual((body["date"], body["is_recurring_annually"], body["country_code"]), ("2026-11-08", False, "MY"))
+        self.assertEqual(
+            (body["date"], body["is_recurring_annually"], body["country_code"]), ("2026-11-08", False, "MY")
+        )
 
     def test_duplicate_holiday_in_the_same_scope(self):
         response = self.post("holidays", {"name": "new year's day", "date": "2026-01-01"})
@@ -346,4 +351,6 @@ class TicketFormVisibilityTests(LookupTestCase):
         self.code.is_active = False
         self.code.save()
         codes = self.client.get("/api/tickets/work-done-codes/").json()
-        self.assertEqual(codes, [{"id": self.code.pk, "code": "RMD", "description": "Remote Diagnostic", "is_active": False}])
+        self.assertEqual(
+            codes, [{"id": self.code.pk, "code": "RMD", "description": "Remote Diagnostic", "is_active": False}]
+        )

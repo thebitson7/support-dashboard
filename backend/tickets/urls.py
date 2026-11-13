@@ -4,6 +4,7 @@ from .views import (
     CustomerListCreateView,
     SiteListCreateView,
     TicketAttachmentView,
+    TicketAttentionView,
     TicketDetailView,
     TicketExportView,
     TicketListCreateView,
@@ -12,6 +13,7 @@ from .views import (
 
 urlpatterns = [
     path("", TicketListCreateView.as_view(), name="ticket-list"),
+    path("attention/", TicketAttentionView.as_view(), name="ticket-attention"),
     path("export/", TicketExportView.as_view(), name="ticket-export"),
     path("<int:pk>/", TicketDetailView.as_view(), name="ticket-detail"),
     path("<int:pk>/attachment/", TicketAttachmentView.as_view(), name="ticket-attachment"),

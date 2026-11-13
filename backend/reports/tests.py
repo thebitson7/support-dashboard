@@ -167,7 +167,10 @@ class TeamActivityAggregationTests(ReportTestCase):
             (4.25, 3.5, 0.75),
         )
         self.assertEqual(
-            [(e["date"], e["start_time"], e["end_time"], e["category"], e["is_auto"], e["ticket_reference"]) for e in body["entries"]],
+            [
+                (e["date"], e["start_time"], e["end_time"], e["category"], e["is_auto"], e["ticket_reference"])
+                for e in body["entries"]
+            ],
             [
                 ("2026-03-02", "09:00", "11:00", "ams", True, "Ticket #152172RA2778834 — Troubleshooting"),
                 ("2026-03-03", "14:00", "15:30", "ams", True, "Ticket #152172RA2778834 — Troubleshooting"),
@@ -190,11 +193,16 @@ class TeamActivityAggregationTests(ReportTestCase):
 class TeamActivityRangeTests(ReportTestCase):
     def test_defaults_to_the_current_month_in_the_admins_zone(self):
         body = self.client.get(REPORT_URL).json()
-        self.assertEqual((body["start_date"], body["end_date"], body["timezone"]), ("2026-03-01", "2026-03-31", "Asia/Kuala_Lumpur"))
+        self.assertEqual(
+            (body["start_date"], body["end_date"], body["timezone"]), ("2026-03-01", "2026-03-31", "Asia/Kuala_Lumpur")
+        )
 
         # 17:30 UTC on 28 Feb: already 1 March in Manila, still February in Malé.
         late = datetime(2026, 2, 28, 17, 30, tzinfo=dt_timezone.utc)
-        for zone, month in [("Asia/Manila", ("2026-03-01", "2026-03-31")), ("Indian/Maldives", ("2026-02-01", "2026-02-28"))]:
+        for zone, month in [
+            ("Asia/Manila", ("2026-03-01", "2026-03-31")),
+            ("Indian/Maldives", ("2026-02-01", "2026-02-28")),
+        ]:
             with self.subTest(zone=zone):
                 self.admin.timezone = zone
                 self.admin.save()
@@ -225,7 +233,7 @@ class TeamActivityExportTests(ReportTestCase):
     def setUp(self):
         super().setUp()
         self.auto(self.alice, datetime(2026, 3, 2, 1, 0, tzinfo=dt_timezone.utc), 120)
-        self.manual(self.alice, date(2026, 3, 3), time(16, 0), time(16, 45), note="=HYPERLINK(\"x\")")
+        self.manual(self.alice, date(2026, 3, 3), time(16, 0), time(16, 45), note='=HYPERLINK("x")')
         self.manual(self.bob, date(2026, 3, 4), time(9, 0), time(17, 0), note="Site visit, Penang")
         self.manual(self.bob, date(2026, 4, 1), time(9, 0), time(10, 0))  # outside the range
 
@@ -244,9 +252,19 @@ class TeamActivityExportTests(ReportTestCase):
         self.assertEqual(
             rows,
             [
-                ["Alice Tan", "2026-03-02", "09:00", "11:00", "AMS", "2.00", "120", "Ticket #152172RA2778834 — Troubleshooting", ""],
+                [
+                    "Alice Tan",
+                    "2026-03-02",
+                    "09:00",
+                    "11:00",
+                    "AMS",
+                    "2.00",
+                    "120",
+                    "Ticket #152172RA2778834 — Troubleshooting",
+                    "",
+                ],
                 # A note that looks like a formula is kept as text.
-                ["Alice Tan", "2026-03-03", "16:00", "16:45", "Non-AMS", "0.75", "45", "Manual", "'=HYPERLINK(\"x\")"],
+                ["Alice Tan", "2026-03-03", "16:00", "16:45", "Non-AMS", "0.75", "45", "Manual", '\'=HYPERLINK("x")'],
                 ["Bob Lim", "2026-03-04", "09:00", "17:00", "Non-AMS", "8.00", "480", "Manual", "Site visit, Penang"],
             ],
         )
@@ -278,9 +296,7 @@ class TicketExportTests(ReportTestCase):
             cms_closed_on=datetime(2026, 3, 3, 10, 0, tzinfo=dt_timezone.utc),
             service_closed_date=NOW,
         )
-        self.other_site = self.ticket(
-            "300ELSEWHERE", site=Site.objects.create(name="=cmd|' /C calc'!A0", ocn="OCN1")
-        )
+        self.other_site = self.ticket("300ELSEWHERE", site=Site.objects.create(name="=cmd|' /C calc'!A0", ocn="OCN1"))
 
     def test_all_matching_rows_with_the_tables_columns(self):
         response = self.client.get(TICKETS_EXPORT_URL, {"page_size": "1", "ordering": "received_at"})
@@ -332,9 +348,7 @@ class TicketExportTests(ReportTestCase):
         _, by_site = read_csv(self.client.get(TICKETS_EXPORT_URL, {"site": str(self.site.pk), "search": "open"}))
         self.assertEqual([r[2] for r in by_site], ["100OPEN"])
 
-        _, by_date = read_csv(
-            self.client.get(TICKETS_EXPORT_URL, {"received_before": "2026-03-01T12:00:00+08:00"})
-        )
+        _, by_date = read_csv(self.client.get(TICKETS_EXPORT_URL, {"received_before": "2026-03-01T12:00:00+08:00"}))
         self.assertEqual([r[2] for r in by_date], ["100OPEN"])
 
     def test_the_lists_validation_applies(self):
@@ -367,7 +381,9 @@ class ExactTotalsRegressionTests(ReportTestCase):
         for n in range(3):  # three 20-minute ticket activities: auto AMS entries
             self.auto(self.alice, datetime(2026, 3, 5, 1 + n, 0, tzinfo=dt_timezone.utc), 20, ticket=ticket)
         for n in range(3):  # three 20-minute manual entries
-            self.manual(self.alice, date(2026, 3, 6), time(9, 20 * n), time(9 + (20 * n + 20) // 60, (20 * n + 20) % 60))
+            self.manual(
+                self.alice, date(2026, 3, 6), time(9, 20 * n), time(9 + (20 * n + 20) // 60, (20 * n + 20) % 60)
+            )
         self.assertEqual(sum(WorkLogEntry.objects.values_list("hours", flat=True)), Decimal("1.98"))
 
     def test_overview_and_totals_row_are_exact(self):
@@ -427,4 +443,3 @@ class TicketExportZoneRegressionTests(ReportTestCase):
                 response = self.client.get(TICKETS_EXPORT_URL, {"tz": bad})
                 self.assertEqual(response.status_code, 400)
                 self.assertIn("tz", response.json())
-

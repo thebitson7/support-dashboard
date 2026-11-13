@@ -172,12 +172,18 @@ class QueryCountTests(Fixtures):
                 resolved_by=self.staff,
             )
             WorkLogEntry.objects.create(
-                user=self.staff, date=date(2026, 3, 4), category="non_ams", start_time=time(20, i % 60), end_time=time(21, 0)
+                user=self.staff,
+                date=date(2026, 3, 4),
+                category="non_ams",
+                start_time=time(20, i % 60),
+                end_time=time(21, 0),
             )
             Site.objects.create(name=f"Site {i}", ocn=f"OCN-{i}-{Site.objects.count()}", country=my)
             Holiday.objects.create(name=f"H{i}-{Holiday.objects.count()}", date=date(2026, 1, 1 + i % 28), country=my)
             for actor in (self.staff, self.other):
-                log_action(actor, AuditLogEntry.Action.TICKET_CREATED, target=ticket, description=f"created {ticket.pk}")
+                log_action(
+                    actor, AuditLogEntry.Action.TICKET_CREATED, target=ticket, description=f"created {ticket.pk}"
+                )
 
     def count(self, path, params=None):
         from django.db import connection
@@ -193,9 +199,13 @@ class QueryCountTests(Fixtures):
         paths = [
             ("/api/tickets/", {"page_size": 200}),
             ("/api/tickets/export/", {}),
+            ("/api/tickets/attention/", {}),
             ("/api/working-hours/entries/", {"date": "2026-03-04", "user_id": self.staff.pk}),
             ("/api/reports/team-activity/", {"start_date": "2026-03-01", "end_date": "2026-03-31"}),
-            ("/api/reports/team-activity/", {"start_date": "2026-03-01", "end_date": "2026-03-31", "user_id": self.staff.pk}),
+            (
+                "/api/reports/team-activity/",
+                {"start_date": "2026-03-01", "end_date": "2026-03-31", "user_id": self.staff.pk},
+            ),
             ("/api/reports/team-activity/export/", {"start_date": "2026-03-01", "end_date": "2026-03-31"}),
             ("/api/lookups/sites/", {}),
             ("/api/lookups/holidays/", {}),
@@ -219,8 +229,12 @@ class QueryCountTests(Fixtures):
         def activities(n):
             for i in range(n):
                 TicketActivity.objects.create(
-                    ticket=ticket, activity_type="follow_up", start_at=T0, end_at=T0 + timedelta(minutes=5),
-                    work_done_code=self.code, resolved_by=self.other,
+                    ticket=ticket,
+                    activity_type="follow_up",
+                    start_at=T0,
+                    end_at=T0 + timedelta(minutes=5),
+                    work_done_code=self.code,
+                    resolved_by=self.other,
                 )
             return self.count(f"/api/tickets/{ticket.pk}/")
 

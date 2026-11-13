@@ -23,8 +23,7 @@ class Command(BaseCommand):
     @transaction.atomic
     def handle(self, *args, **options):
         outcomes = Counter(
-            sync_activity(activity)
-            for activity in TicketActivity.objects.select_related("ticket", "resolved_by")
+            sync_activity(activity) for activity in TicketActivity.objects.select_related("ticket", "resolved_by")
         )
         self.stdout.write(
             self.style.SUCCESS(

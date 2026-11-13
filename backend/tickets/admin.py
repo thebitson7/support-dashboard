@@ -71,7 +71,7 @@ class TicketAdmin(admin.ModelAdmin):
         "cms_closed_by",
         "created_by",
     )
-    readonly_fields = ("created_at", "updated_at")
+    readonly_fields = ("created_at", "updated_at", "closed_recorded_at", "closure_lag_minutes")
     inlines = [TicketActivityInline]
 
     @admin.display(description="Status")

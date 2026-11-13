@@ -410,7 +410,7 @@ export function LookupFormDialog<Row extends LookupRow>({
                   {submitting && (
                     <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
                   )}
-                  {submitting ? "Saving…" : row ? "Save Changes" : `Add ${config.noun}`}
+                  {submitting ? "Saving…" : row ? "Save changes" : `Add ${config.noun}`}
                 </Button>
               </div>
             </footer>

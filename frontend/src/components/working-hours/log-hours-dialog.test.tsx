@@ -71,14 +71,14 @@ beforeEach(() => {
 describe("LogHoursDialog validation", () => {
   it("shows no errors before the user has done anything", () => {
     setup();
-    expect(screen.getByRole("dialog", { name: "Log Hours" })).toBeInTheDocument();
+    expect(screen.getByRole("dialog", { name: "Log hours" })).toBeInTheDocument();
     expect(fieldError("start_time")).toBeUndefined();
     expect(fieldError("end_time")).toBeUndefined();
   });
 
   it("blocks submitting an empty form and names what's missing", async () => {
     const { user } = setup();
-    await user.click(screen.getByRole("button", { name: "Log Hours" }));
+    await user.click(screen.getByRole("button", { name: "Log hours" }));
 
     expect(fieldError("start_time")).toBe("Choose a start time.");
     expect(fieldError("end_time")).toBe("Choose an end time.");
@@ -92,7 +92,7 @@ describe("LogHoursDialog validation", () => {
     const { user } = setup({
       entry: entry({ date: "2026-09-25" }),
     });
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(fieldError("date")).toBe("You can't log hours for a future date.");
     expect(apiPatch).not.toHaveBeenCalled();
   });
@@ -100,7 +100,7 @@ describe("LogHoursDialog validation", () => {
   it("allows today itself", async () => {
     vi.mocked(apiPatch).mockResolvedValue(entry());
     const { user } = setup({ entry: entry({ date: TODAY }) });
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(fieldError("date")).toBeUndefined();
     expect(apiPatch).toHaveBeenCalledTimes(1);
   });
@@ -159,7 +159,7 @@ describe("LogHoursDialog saving", () => {
       await user.click(within(picker).getByRole("button", { name: "Done" }));
     }
     await user.type(screen.getByRole("textbox", { name: /Note/ }), "  LIS outage  ");
-    await user.click(screen.getByRole("button", { name: "Log Hours" }));
+    await user.click(screen.getByRole("button", { name: "Log hours" }));
 
     expect(apiPost).toHaveBeenCalledWith("/working-hours/entries/?user_id=7", {
       date: "2026-09-22",
@@ -175,7 +175,7 @@ describe("LogHoursDialog saving", () => {
   it("doesn't send a category when editing, so an old AMS entry stays AMS", async () => {
     vi.mocked(apiPatch).mockResolvedValue(entry());
     const { user } = setup({ entry: entry({ category: "ams" }) });
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(apiPatch).toHaveBeenCalledWith("/working-hours/entries/12/", {
       date: "2026-09-23",
       start_time: "09:00",
@@ -194,7 +194,7 @@ describe("LogHoursDialog saving", () => {
       }),
     );
     const { user, onSaved } = setup({ entry: entry() });
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
 
     expect(fieldError("start_time")).toBe("Overlaps another entry (9:00 AM – 10:00 AM).");
     expect(screen.getByRole("alert")).toHaveTextContent("Daily limit reached.");
@@ -204,7 +204,7 @@ describe("LogHoursDialog saving", () => {
   it("keeps the form open with a retry hint when the server can't be reached", async () => {
     vi.mocked(apiPatch).mockRejectedValue(new ApiError(0, "offline"));
     const { user, onOpenChange } = setup({ entry: entry() });
-    await user.click(screen.getByRole("button", { name: "Save Changes" }));
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
     expect(screen.getByRole("alert")).toHaveTextContent(
       "Couldn't reach the server. Your entries are kept; try again.",
     );

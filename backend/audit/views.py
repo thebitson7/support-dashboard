@@ -6,10 +6,8 @@ choices the filter offers.
 
 import json
 from datetime import datetime, time, timedelta
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import F, Q
-from django.utils.dateparse import parse_date
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiParameter,
@@ -29,13 +27,12 @@ from rest_framework.views import APIView
 from accounts.permissions import IsAdminRole
 from accounts.throttling import ExportRateThrottle
 from core.exports import csv_response, text_cell
+from core.params import positive_id, query_day, query_timezone
 from working_hours.periods import local_today
 
 from .models import ACTION_GROUPS, AuditLogEntry
 
 DEFAULT_DAYS = 30
-# Ids beyond this overflow the database integer type (a 500, not a 400).
-MAX_ID = 2**63 - 1
 ORDERINGS = {
     "created_at": "created_at",
     "actor": "actor_username",
@@ -83,24 +80,11 @@ class AuditLogEntrySerializer(serializers.ModelSerializer):
         read_only_fields = fields
 
 
-def _day(params, name):
-    raw = params.get(name)
-    if not raw:
-        return None
-    try:
-        value = parse_date(raw)
-    except ValueError:  # well-formed but impossible, e.g. 2026-02-30
-        value = None
-    if value is None:
-        raise ValidationError({name: "Use a YYYY-MM-DD date."})
-    return value
-
-
 def date_range(request):
     """start_date / end_date (inclusive days in the admin's own zone); default: the last 30 days."""
     today = local_today(request.user)
-    end = _day(request.query_params, "end_date") or today
-    start = _day(request.query_params, "start_date") or end - timedelta(days=DEFAULT_DAYS - 1)
+    end = query_day(request.query_params, "end_date") or today
+    start = query_day(request.query_params, "start_date") or end - timedelta(days=DEFAULT_DAYS - 1)
     if start > end:
         raise ValidationError({"end_date": "The end date must be on or after the start date."})
     return start, end
@@ -123,9 +107,7 @@ def filtered_entries(request):
 
     actor = params.get("actor")
     if actor:
-        if not (actor.isascii() and actor.isdigit()) or not 0 < int(actor) <= MAX_ID:
-            raise ValidationError({"actor": "Must be a user id."})
-        qs = qs.filter(actor_id=int(actor))
+        qs = qs.filter(actor_id=positive_id(actor, "actor", "Must be a user id."))
 
     actions = [a.strip() for a in params.get("action", "").split(",") if a.strip()]
     if actions:
@@ -167,9 +149,7 @@ AUDIT_FILTERS = [
         OpenApiTypes.DATE,
         description=f"Inclusive, in the admin's own zone. Default: {DEFAULT_DAYS - 1} days before `end_date`.",
     ),
-    OpenApiParameter(
-        "end_date", OpenApiTypes.DATE, description="Inclusive, in the admin's own zone. Default: today."
-    ),
+    OpenApiParameter("end_date", OpenApiTypes.DATE, description="Inclusive, in the admin's own zone. Default: today."),
     OpenApiParameter("actor", int, description="Only entries by this user id."),
     OpenApiParameter(
         "action",
@@ -215,9 +195,7 @@ class AuditLogListView(ListAPIView):
     summary="Export the audit log as CSV (admin only)",
     parameters=[
         *AUDIT_FILTERS,
-        OpenApiParameter(
-            "tz", str, description="IANA zone for the timestamps. Default: the admin's profile zone."
-        ),
+        OpenApiParameter("tz", str, description="IANA zone for the timestamps. Default: the admin's profile zone."),
     ],
     request=None,
     responses={
@@ -237,14 +215,7 @@ class AuditLogExportView(APIView):
     throttle_classes = [ExportRateThrottle]
 
     def get(self, request):
-        requested = request.query_params.get("tz")
-        if requested:
-            try:
-                tz = ZoneInfo(requested)
-            except (ZoneInfoNotFoundError, ValueError):
-                raise ValidationError({"tz": "Use an IANA time zone name, e.g. Asia/Kuala_Lumpur."})
-        else:
-            tz = request.user.tzinfo
+        tz = query_timezone(request.query_params, default=request.user.tzinfo)
         entries, start, end = filtered_entries(request)
         header = [
             f"Timestamp ({tz.key})",

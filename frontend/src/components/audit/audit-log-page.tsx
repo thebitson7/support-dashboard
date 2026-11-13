@@ -10,12 +10,11 @@ import { displayName, initials, type AuthUser } from "@/lib/auth";
 import { addDaysToDate, todayInZone } from "@/lib/local-datetime";
 import { EASE } from "@/lib/motion";
 import { useApiGet } from "@/hooks/use-api";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader } from "@/components/layout/page-header";
 import { ExportButton } from "@/components/common/export-button";
 import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Toaster } from "@/components/ui/sonner";
 
 import { AuditFilters, type AuditFilterState } from "./audit-filters";
 import { AuditTable, PAGE_SIZE, type Person, type Sort } from "./audit-table";
@@ -166,20 +165,18 @@ export function AuditLogPage({ viewer }: { viewer: AuthUser }) {
         transition={{ duration: 0.45, ease: EASE }}
         className="mx-auto flex min-h-[30rem] w-full max-w-6xl flex-1 flex-col gap-5"
       >
-        <div className="grid gap-3">
-          <Breadcrumb items={[{ label: "Audit Log" }]} />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">Audit Log</h1>
-              <p className="text-label">Who did what, and when. Entries are never edited.</p>
-            </div>
+        <PageHeader
+          trail={[{ label: "Audit Log" }]}
+          title="Audit Log"
+          description="Who did what, and when. Entries are never edited."
+          actions={
             <ExportButton
               path={`/audit/logs/export/?${exportParams}`}
               fallbackName={`audit-log_${range.start}_${range.end}.csv`}
               disabled={Boolean(problem) || !list.data || list.data.count === 0}
             />
-          </div>
-        </div>
+          }
+        />
 
         <AuditFilters
           state={filters}
@@ -197,7 +194,6 @@ export function AuditLogPage({ viewer }: { viewer: AuthUser }) {
           {body}
         </Card>
       </motion.div>
-      <Toaster position="bottom-right" />
     </MotionConfig>
   );
 }

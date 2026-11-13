@@ -11,10 +11,10 @@ import { EASE } from "@/lib/motion";
 import { SearchCombobox } from "@/components/common/search-combobox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
+import { formatDuration } from "@/lib/format";
 import { FlagCell } from "@/components/tickets/cells";
 import {
   ACTIVITY_TYPES,
-  formatMinutes,
   labelOf,
   minutesBetween,
   validateActivity,
@@ -39,7 +39,8 @@ const EMPTY_DRAFT: Draft = {
   resolved_by: null,
 };
 
-const DATE_FMT = new Intl.DateTimeFormat(undefined, {
+// A fixed locale, like every other date in the app (not the browser's).
+const DATE_FMT = new Intl.DateTimeFormat("en-GB", {
   day: "2-digit",
   month: "short",
   hour: "2-digit",
@@ -146,7 +147,7 @@ function ActivityEditor({
           required
           error={show("end_at")}
           hint={
-            minutes !== null && !errors.end_at ? `Duration: ${formatMinutes(minutes)}` : undefined
+            minutes !== null && !errors.end_at ? `Duration: ${formatDuration(minutes)}` : undefined
           }
         >
           <DateTimeInput

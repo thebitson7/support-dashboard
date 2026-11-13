@@ -9,7 +9,7 @@ import { Button } from "@/components/ui/button";
 
 /**
  * Downloads a CSV export (see apiDownload). Failures are a toast, so the
- * page needs a <Toaster />.
+ * signed-in app shell mounts the <Toaster />.
  */
 export function ExportButton({
   path,

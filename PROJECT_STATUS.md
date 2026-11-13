@@ -136,7 +136,7 @@ Only the **Home dashboard** still runs on mock data; no placeholders are left. T
 - **Navigation:** previous/next day, a date picker, and "Back to today" (no future days).
 - **Admins** can pick anyone.
 - **The URL holds the state** (`?date=&user_id=`), so links and the back button work.
-- **Manual entries** (Non-AMS) have edit and delete, plus **Log Hours** for the day being viewed.
+- **Manual entries** (Non-AMS) have edit and delete, plus **Log hours** for the day being viewed.
 - **Auto entries** show their ticket reference and a "From ticket" lock with an explanation.
 
 **How AMS time gets there:** a ticket activity with `resolved_by` set is that person's AMS time. It is mirrored as one `WorkLogEntry` (`ticket_activity`, a unique one-to-one). `working_hours/sync.py` is the only code that writes auto entries. It is reached from:
@@ -216,6 +216,21 @@ Staff see only All Tickets, with no tab bar.
 **API:** `GET /api/audit/logs/` (filters `actor`, `action` comma list, `target_type` + `target_id`, `start_date` / `end_date`, `search`, `ordering`; paginated 50/page, max 200), `GET /api/audit/logs/export/` (same filters, CSV, export throttle), `GET /api/audit/logs/actions/` (values, labels, groups).
 
 **Files:** `audit/` (`models.py`, `log.py`, `text.py`, `views.py`, the prune command), `tickets/audit.py`, `lookups/audit.py`, the call sites in `accounts/views.py`, `tickets/serializers.py`, `working_hours/views.py`, `lookups/views.py`; `app/audit-log/page.tsx`, `components/audit/audit-log-page.tsx`.
+
+### 2.12 Tickets waiting to be closed (added 2026-11-12)
+
+**What it does:** flags open tickets that have waited too long since their work finished. Each person sees the tickets they are named on (creator, assignee, forward recipient while forwarded, CMS adder, any activity's resolver). Admins see every ticket, plus a per-person grouping in which a ticket counts for everyone named on it. It appears in three places, all fed by one shared request:
+- a **sign-in alert**, shown only when the viewer has an overdue or critical ticket. It appears once per browser-tab session and again after each new sign-in, but not on a refresh. Staff get their tickets with a "Close ticket" button that opens the ticket's Verification tab; admins get a team summary.
+- a live **"Needs closing" box** at the top of Home, labelled "Live". The "Sample data" badge now covers only the Overview section below it. Admins get "By person" and "All tickets" tabs.
+- a **count badge** on the "AMS Tickets" sidebar item (overdue + critical). It is red when any ticket is critical, otherwise orange, and shrinks to a dot when the sidebar is collapsed.
+
+**Rules:** the clock starts at the end of the ticket's last activity (by anyone); with no activities it starts at `received_at` and every threshold shifts later by a grace period. Levels: due soon at 24 h, overdue at 48 h, critical at 72 h (inclusive). Ages are plain calendar hours. The thresholds come from `TICKET_DUE_SOON_HOURS`, `TICKET_OVERDUE_HOURS`, `TICKET_CRITICAL_HOURS` and `TICKET_NO_ACTIVITY_GRACE_HOURS`, are validated at startup, and are returned by the API, so the frontend never hardcodes them. Deactivated people are never listed.
+
+**Closure timing (for later reporting, no UI yet):** when an edit closes a ticket, `Ticket.closed_recorded_at` is set to the system time and `closure_lag_minutes` to the minutes since the clock started. A reopen clears both. A ticket created already closed gets the time but no lag. Tickets closed before this change keep NULL.
+
+**API:** `GET /api/tickets/attention/` (no parameters, `Cache-Control: no-store`; capped at 200 results, with the true `total` and `counts`). **Dev data:** `python manage.py seed_attention_demo` (DEMO-ATT-1001…1004, idempotent, DEBUG only).
+
+**Files:** `tickets/attention.py`, `tickets/test_attention.py`, the seed command, migration `tickets/0004`; `components/attention/`, `lib/attention.ts`, `types/attention.ts`, plus small hooks in `lib/auth.tsx`, `config/nav.ts`, the sidebar, `app-shell.tsx`, `tickets-page.tsx` (the `?edit=&tab=` deep link) and `ticket-dialog.tsx` (`initialTab`).
 
 ---
 
@@ -308,7 +323,7 @@ Every entry has a stored calendar `date` plus local start and end times. All fou
 | Where | Anchor |
 |---|---|
 | Working Hours periods ("Today", "This week"…) | The **viewer's** profile zone |
-| Job Sheets default day, "no future days", Log Hours' default date | The **viewer's** profile zone |
+| Job Sheets default day, "no future days", Log hours' default date | The **viewer's** profile zone |
 | Reports default range (current month) | The **viewer's** profile zone |
 | Auto-sync: which date an activity lands on | The **resolver's** profile zone, when synced |
 
@@ -317,6 +332,13 @@ So an admin in Kuala Lumpur and a staff member in Malé can see a different "tod
 ---
 
 ## 4. Current state of quality
+
+### 4.0 Quality review, 2026-11-13
+
+A whole-project polish and hardening pass (no features, schema or API-contract changes):
+- **Backend:** query-parameter parsing shared in `core/params.py` (ids, dates, instants, time zones; 11 tests), `VERIFICATION_FIELDS` and `ticket_label` defined once in `tickets/models.py`; every one of the 60 API operations now has an OpenAPI summary (41 had none; a test keeps it that way); mypy targets the 3.14 runtime; **ruff** (lint + format, conservative rules) added to `requirements-dev.txt` and CI, and the code formatted once with it; CI also checks the OpenAPI schema.
+- **Frontend:** one `PageHeader` / `PrimaryAction` for every page header; one `ToneBadge` for every status pill (ticket status, active/inactive, AMS/Non-AMS, audit actions: the audit badges were below AA contrast in dark mode); one duration format (`formatDuration`) and one date-time format everywhere; read-only yes/no cells are a check mark or dash, not a checkbox; the Open-row tint on the tickets table is light; one toast area for the whole app; labels follow one rule (Title Case for names of places: nav, page titles, breadcrumbs, tabs; sentence case for everything else); the sidebar and sign-in alert are lazy-loaded (−52 KB gzipped first-load JS on /login, smaller on every page); a 34-test suite covers the server-side gateway (`src/lib/server/gateway.test.ts`).
+- **Counts:** backend 346 tests, frontend 268, all passing.
 
 ### 4.1 Tests and checks (run 2026-09-27, final pre-deployment review)
 
@@ -419,7 +441,8 @@ Reconciled with the upgrade pass:
 | Working Hours, Job Sheets, the auto-sync | Real (goals are fixed constants) |
 | Reports (both tabs, both CSVs) | Real |
 | Ticket type / channel / activity-type lists | Hardcoded and duplicated (gap #12) |
-| **Home dashboard** | **Mock** (`src/lib/mock-data.ts`, marked "Sample data") |
+| Home "Needs closing" box (tickets waiting to be closed) | Real (marked "Live") |
+| **Home dashboard, Overview section** | **Mock** (`src/lib/mock-data.ts`, marked "Sample data") |
 
 ---
 
@@ -481,6 +504,6 @@ All passwords are `password123`.
 
 ### Running the checks
 ```bash
-cd backend && python manage.py check && python manage.py test        # 249 tests (add DATABASE_URL=… to run them on PostgreSQL)
+cd backend && python manage.py check && ruff check . && ruff format --check . && mypy . && python manage.py test   # 346 tests (add DATABASE_URL=… to run them on PostgreSQL)
 cd frontend && npm run typecheck && npm run lint && npm run format:check
 ```

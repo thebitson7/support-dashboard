@@ -32,18 +32,15 @@ Time rules:
 
 from datetime import datetime, time
 
+from tickets.models import ticket_label
+
 from .models import WorkLogEntry
 
 DAY_END = time(23, 59)
 
 
-def ticket_label(ticket) -> str:
-    """"Ticket #152172RA2778834" (the CMS number people know it by)."""
-    return f"Ticket #{ticket.cms_next_ticket_no}"
-
-
 def ticket_reference(activity) -> str:
-    """"Ticket #152172RA2778834 — Troubleshooting"."""
+    """ "Ticket #152172RA2778834 — Troubleshooting"."""
     return f"{ticket_label(activity.ticket)} — {activity.get_activity_type_display()}"
 
 

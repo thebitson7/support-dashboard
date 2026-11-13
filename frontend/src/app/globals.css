@@ -22,6 +22,9 @@
   --shadow-elev-2: var(--elev-2);
   --shadow-elev-hover: var(--elev-hover);
   --color-status-open: var(--status-open);
+  --color-attention-soon: var(--attention-soon);
+  --color-attention-overdue: var(--attention-overdue);
+  --color-attention-critical: var(--attention-critical);
   --color-status-closed: var(--status-closed);
   --color-chart-violet: var(--chart-violet);
   --color-chart-info: var(--chart-info);
@@ -93,6 +96,12 @@
   /* Ticket status: a muted coral for "needs attention", a calm teal for done. */
   --status-open: #b93326;
   --status-closed: #256a5b;
+  /* "Tickets waiting to be closed" levels. As text on the card, the page
+     background and their own 12% tint, all >= 4.9:1 (WCAG AA). Always shown
+     with an icon and a word too, never by colour alone. */
+  --attention-soon: #8a5300;
+  --attention-overdue: #b13f00;
+  --attention-critical: #b42318;
   --radius: 0.625rem;
   /* Layered elevation: a tight contact shadow + a soft ambient one (+ a broad
      lift for the raised hero tier). Tinted with the brand navy, not grey. */
@@ -147,6 +156,10 @@
   --chart-violet: #b0a2f5;
   --status-open: #ff9a88;
   --status-closed: #8edbc6;
+  /* >= 4.9:1 on the card and on their 12% tint (much more on black). */
+  --attention-soon: #f7c35c;
+  --attention-overdue: #ffb380;
+  --attention-critical: #ffaaa3;
   --sidebar: #233d4d;
   --sidebar-foreground: #eaecf0;
   --sidebar-primary: #fe7f2d;

@@ -30,6 +30,20 @@ class SchemaGenerationTests(SimpleTestCase):
         self.assertIn("/api/tickets/export/:", schema)
         self.assertNotIn("/api/schema/:", schema)
 
+    def test_every_operation_has_a_summary(self):
+        # A summary is what the Swagger UI lists; one missing reads as an
+        # undocumented endpoint (41 of 60 were, before the 2026-11 review).
+        from drf_spectacular.generators import SchemaGenerator
+
+        schema = SchemaGenerator().get_schema(request=None, public=True)
+        missing = [
+            f"{method.upper()} {path}"
+            for path, operations in schema["paths"].items()
+            for method, operation in operations.items()
+            if not operation.get("summary")
+        ]
+        self.assertEqual(missing, [])
+
 
 # The production value of SPECTACULAR_SETTINGS["SERVE_PERMISSIONS"] (DEBUG off).
 # Spectacular reads it once, when its views are imported, so it's applied here

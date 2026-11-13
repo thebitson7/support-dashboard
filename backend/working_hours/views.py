@@ -1,6 +1,5 @@
 from functools import cached_property
 
-from django.utils.dateparse import parse_date
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
@@ -16,16 +15,14 @@ from accounts.serializers import UserSummarySerializer
 from audit import text
 from audit.log import log_action, person
 from audit.models import AuditLogEntry
+from core.params import positive_id, query_day
+from tickets.models import ticket_label
 
 from .models import WorkLogEntry
 from .openapi import WorkingHoursSummary
 from .periods import local_today, summarize
 from .serializers import WorkLogEntrySerializer
-from .sync import ticket_label
 from .totals import entry_minutes
-
-# Ids beyond this overflow the database integer type (a 500, not a 400).
-MAX_ID = 2**63 - 1
 
 
 def target_user(request, param: str = "user_id") -> User:
@@ -45,12 +42,9 @@ def target_user(request, param: str = "user_id") -> User:
     raw_id = request.query_params.get(param)
     if raw_id is None or not raw_id.strip():
         raise ValidationError({param: "This parameter is required."})
-    raw_id = raw_id.strip()
-    # isascii() matters: str.isdigit() accepts "²", which int() rejects.
-    if not (raw_id.isascii() and raw_id.isdigit()) or not 0 < int(raw_id) <= MAX_ID:
-        raise ValidationError({param: "Must be a positive integer user id."})
+    user_id = positive_id(raw_id.strip(), param, "Must be a positive integer user id.")
     people = User.objects.all() if request.method in SAFE_METHODS else User.objects.filter(is_active=True)
-    target = people.filter(pk=int(raw_id)).first()
+    target = people.filter(pk=user_id).first()
     if target is None:
         raise NotFound("User not found.")
     return target
@@ -63,15 +57,14 @@ USER_ID = OpenApiParameter(
 )
 
 
+@extend_schema_view(get=extend_schema(summary="List active staff (admin only)"))
 class StaffUserListView(ListAPIView):
     """Staff users an admin can pick from. Admin role only."""
 
     permission_classes = [IsAuthenticated, IsAdminRole]
     serializer_class = UserSummarySerializer
     pagination_class = None
-    queryset = User.objects.filter(role=User.Role.STAFF, is_active=True).order_by(
-        "first_name", "last_name", "username"
-    )
+    queryset = User.objects.filter(role=User.Role.STAFF, is_active=True).order_by("first_name", "last_name", "username")
 
 
 @extend_schema(
@@ -143,16 +136,7 @@ class EntryListCreateView(ListCreateAPIView):
         return target_user(self.request, self.target_user_param)
 
     def get_queryset(self):
-        raw = self.request.query_params.get("date")
-        if raw:
-            try:
-                day = parse_date(raw)
-            except ValueError:  # well-formed but impossible, e.g. 2026-02-30
-                day = None
-            if day is None:
-                raise ValidationError({"date": "Use a YYYY-MM-DD date."})
-        else:
-            day = local_today(self.request.user)
+        day = query_day(self.request.query_params, "date") or local_today(self.request.user)
         return (
             WorkLogEntry.objects.filter(user=self.target, date=day)
             .select_related("ticket_activity__ticket")
@@ -179,8 +163,11 @@ AUTO_ENTRY_CONFLICT = {409: OpenApiResponse(description="An auto entry (from a t
 
 
 @extend_schema_view(
-    patch=extend_schema(responses={200: WorkLogEntrySerializer, **AUTO_ENTRY_CONFLICT}),
-    delete=extend_schema(responses={204: None, **AUTO_ENTRY_CONFLICT}),
+    get=extend_schema(summary="Get a work-log entry"),
+    patch=extend_schema(
+        summary="Edit a work-log entry", responses={200: WorkLogEntrySerializer, **AUTO_ENTRY_CONFLICT}
+    ),
+    delete=extend_schema(summary="Delete a work-log entry", responses={204: None, **AUTO_ENTRY_CONFLICT}),
 )
 class EntryDetailView(RetrieveUpdateDestroyAPIView):
     """
@@ -236,7 +223,7 @@ class EntryDetailView(RetrieveUpdateDestroyAPIView):
 
 
 def work_entry_phrase(entry) -> str:
-    """"1h 30m of Non-AMS work (9:00 AM – 10:30 AM) on 4 Mar 2026"."""
+    """ "1h 30m of Non-AMS work (9:00 AM – 10:30 AM) on 4 Mar 2026"."""
     return (
         f"{text.duration(entry_minutes(entry))} of {entry.get_category_display()} work "
         f"({text.clock(entry.start_time)} – {text.clock(entry.end_time)}) on {text.day(entry.date)}"

@@ -6,7 +6,9 @@ import { ChevronRight } from "lucide-react";
  * The last item is the current page; any other item without an `href` is a
  * plain label (e.g. the "Lookups" group, which has no page of its own).
  */
-export function Breadcrumb({ items }: { items: { label: string; href?: string }[] }) {
+export type BreadcrumbItem = { label: string; href?: string };
+
+export function Breadcrumb({ items }: { items: BreadcrumbItem[] }) {
   const trail = [{ label: "Home", href: "/" }, ...items];
   return (
     <nav aria-label="Breadcrumb">

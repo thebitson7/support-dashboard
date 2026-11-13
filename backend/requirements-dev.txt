@@ -2,6 +2,9 @@
 # pip install -r requirements-dev.txt
 -r requirements.txt
 
+# Lint + format check (see [tool.ruff] in pyproject.toml).
+ruff==0.17.5
+
 # Type checking (see [tool.mypy] in pyproject.toml).
 ast-serialize==0.11.2
 django-stubs==6.1.1

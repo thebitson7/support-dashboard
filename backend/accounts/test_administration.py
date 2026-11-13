@@ -84,7 +84,9 @@ class AdministrationListTests(AdminTestCase):
 
     def test_search_by_username_or_name_and_ordering(self):
         self.assertEqual([u["username"] for u in self.client.get(LIST_URL, {"search": "huss"}).json()], ["syed"])
-        self.assertEqual([u["username"] for u in self.client.get(LIST_URL, {"search": "Syed Hussain"}).json()], ["syed"])
+        self.assertEqual(
+            [u["username"] for u in self.client.get(LIST_URL, {"search": "Syed Hussain"}).json()], ["syed"]
+        )
         self.assertEqual([u["username"] for u in self.client.get(LIST_URL, {"search": "bos"}).json()], ["boss"])
         ordered = [u["username"] for u in self.client.get(LIST_URL, {"ordering": "-role"}).json()]
         self.assertEqual(ordered, ["syed", "boss"])  # "staff" sorts after "admin"
@@ -144,7 +146,9 @@ class AdministrationEditTests(AdminTestCase):
         response = self.patch(self.staff, {"first_name": " Syed A. ", "role": "admin", "timezone": "Indian/Maldives"})
         self.assertEqual(response.status_code, 200, response.content)
         self.staff.refresh_from_db()
-        self.assertEqual((self.staff.first_name, self.staff.role, self.staff.timezone), ("Syed A.", "admin", "Indian/Maldives"))
+        self.assertEqual(
+            (self.staff.first_name, self.staff.role, self.staff.timezone), ("Syed A.", "admin", "Indian/Maldives")
+        )
 
     def test_deactivate_and_reactivate(self):
         self.assertEqual(self.patch(self.staff, {"is_active": False}).json()["is_active"], False)

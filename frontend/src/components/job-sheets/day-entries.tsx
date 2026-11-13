@@ -11,7 +11,8 @@ import {
   formatTimeRange,
 } from "@/lib/working-hours";
 import { LoadErrorPlaceholder } from "@/components/common/state-placeholder";
-import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
+import { ToneBadge } from "@/components/common/tone-badge";
+import { formatDuration } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -26,18 +27,10 @@ const categoryLabel = (entry: WorkLogEntry) =>
  * Shared by the Job Sheet and the Reports drill-down.
  */
 export function CategoryPill({ category }: { category: WorkLogEntry["category"] }) {
-  const color = CATEGORY_COLOR[category];
   return (
-    <span
-      className="inline-flex w-22 shrink-0 items-center justify-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold whitespace-nowrap"
-      style={{
-        color: `color-mix(in oklab, ${color}, var(--foreground) 45%)`,
-        backgroundColor: `color-mix(in oklab, ${color} 14%, transparent)`,
-      }}
-    >
-      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: color }} />
+    <ToneBadge tone={CATEGORY_COLOR[category]} className="w-22 justify-center">
       {WORK_CATEGORIES.find((c) => c.value === category)?.label}
-    </span>
+    </ToneBadge>
   );
 }
 
@@ -94,7 +87,7 @@ export function DayEntries({
         {entries && entries.length > 0 && (
           <p className="text-label tabular-nums">
             {entries.length} {entries.length === 1 ? "entry" : "entries"} ·{" "}
-            <span className="font-semibold text-foreground">{formatMinutes(totalMinutes)}</span>
+            <span className="font-semibold text-foreground">{formatDuration(totalMinutes)}</span>
           </p>
         )}
       </header>
@@ -123,7 +116,7 @@ export function DayEntries({
           {canLog && (
             <Button variant="outline" size="sm" onClick={onAdd}>
               <Plus aria-hidden />
-              Log Hours
+              Log hours
             </Button>
           )}
         </div>
@@ -145,7 +138,7 @@ export function DayEntries({
                     {" · "}
                   </span>
                   <span className="sr-only">, </span>
-                  <span className="font-semibold">{formatMinutes(entryMinutes(entry))}</span>
+                  <span className="font-semibold">{formatDuration(entryMinutes(entry))}</span>
                 </span>
                 {entry.is_auto && entry.ticket_reference ? (
                   <span

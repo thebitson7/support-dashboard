@@ -146,7 +146,9 @@ class WorkAcrossLayersTests(APITestCase):
 
         sheet = self.job_sheet(self.syed)
         manual = [e for e in sheet if not e["is_auto"]]
-        self.assertEqual([(e["category"], self.minutes(e), e["note"]) for e in manual], [("non_ams", 40, "Team meeting")])
+        self.assertEqual(
+            [(e["category"], self.minutes(e), e["note"]) for e in manual], [("non_ams", 40, "Team meeting")]
+        )
 
         today = self.today(self.syed)
         self.assertEqual((today["ams_minutes"], today["non_ams_minutes"]), (60, 40))

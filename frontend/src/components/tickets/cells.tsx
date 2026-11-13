@@ -1,18 +1,17 @@
+import { Check } from "lucide-react";
 import { cn } from "cn";
 
 import type { TicketStatus } from "@/types/tickets";
-import { Badge } from "@/components/ui/badge";
-import { Checkbox } from "@/components/ui/checkbox";
+import { formatLocal, formatLocalDisplay, partsOfDate } from "@/lib/local-datetime";
+import { ToneBadge } from "@/components/common/tone-badge";
 
 /**
- * DD/MM/YYYY HH:mm in the viewer's local time: the same clock the ticket form
- * uses for entry. (Rows only ever render in the browser, after the API call,
- * so there is no server/client hydration mismatch to guard against.)
+ * "24 Sep 2026, 2:30 PM" in the viewer's local time: the app's one date-time
+ * format, the same the ticket form's pickers show. (Rows only ever render in
+ * the browser, after the API call, so there is no hydration mismatch.)
  */
 function formatDateTime(ms: number) {
-  const d = new Date(ms);
-  const p = (n: number) => String(n).padStart(2, "0");
-  return `${p(d.getDate())}/${p(d.getMonth() + 1)}/${d.getFullYear()} ${p(d.getHours())}:${p(d.getMinutes())}`;
+  return formatLocalDisplay(formatLocal(partsOfDate(new Date(ms))));
 }
 
 /**
@@ -59,40 +58,31 @@ export function DurationCell({ value }: { value: number }) {
  * Both come from theme tokens, so light and dark are handled in globals.css.
  */
 export function StatusCell({ status }: { status: TicketStatus }) {
-  const token = status === "Open" ? "var(--status-open)" : "var(--status-closed)";
-  // The Open row wash is strong, so the badge text steps toward the
-  // foreground colour (deeper in light, paler in dark) to stay readable on it.
-  const text =
-    status === "Open" ? "color-mix(in oklab, var(--status-open), var(--foreground) 72%)" : token;
   return (
-    <Badge
-      variant="outline"
-      className="gap-1.5 border-0 font-semibold"
-      style={{
-        color: text,
-        backgroundColor: `color-mix(in oklab, ${token} 12%, transparent)`,
-      }}
-    >
-      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: token }} />
+    <ToneBadge tone={status === "Open" ? "var(--status-open)" : "var(--status-closed)"}>
       {status}
-    </Badge>
+    </ToneBadge>
   );
 }
 
 /**
- * A boolean shown as a real checkbox in a read-only state: a filled orange
- * box with a check when set, a clear outlined box when not.
+ * A read-only yes/no in a table: a check mark for yes, the table's quiet
+ * dash for no. Deliberately not a checkbox, which would look clickable.
  */
 export function FlagCell({ checked, label }: { checked: boolean; label: string }) {
   return (
     <span className="flex justify-center">
-      <Checkbox
-        checked={checked}
-        readOnly
-        tabIndex={-1}
-        aria-label={`${label}: ${checked ? "yes" : "no"}`}
-        className="pointer-events-none size-4.5"
-      />
+      {checked ? (
+        <>
+          <Check className="size-4.5 text-foreground" strokeWidth={2.5} aria-hidden />
+          <span className="sr-only">{label}: yes</span>
+        </>
+      ) : (
+        <span className="text-muted-foreground/60">
+          <span aria-hidden>—</span>
+          <span className="sr-only">{label}: no</span>
+        </span>
+      )}
     </span>
   );
 }

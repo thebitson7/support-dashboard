@@ -57,7 +57,10 @@ function useRemoteOptions(
     const controller = new AbortController();
     const timer = setTimeout(() => {
       loader(query.trim(), controller.signal).then(
-        (options) => setState({ key, options, failed: false }),
+        // A superseded search that still resolves must not overwrite newer results.
+        (options) => {
+          if (!controller.signal.aborted) setState({ key, options, failed: false });
+        },
         () => {
           if (!controller.signal.aborted) setState({ key, options: [], failed: true });
         },

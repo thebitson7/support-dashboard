@@ -1,10 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { formatDuration } from "@/lib/format";
+
 import {
   activitiesFromTicket,
   activitiesTotalHours,
   buildTicketFormData,
-  formatMinutes,
   initialValues,
   mapServerErrors,
   minutesBetween,
@@ -121,10 +122,13 @@ describe("durations", () => {
   });
 
   it("formats minutes as 'Xh MMm', or just minutes under an hour", () => {
-    expect(formatMinutes(0)).toBe("0m");
-    expect(formatMinutes(45)).toBe("45m");
-    expect(formatMinutes(60)).toBe("1h 00m");
-    expect(formatMinutes(125)).toBe("2h 05m");
+    expect(formatDuration(0)).toBe("0m");
+    expect(formatDuration(45)).toBe("45m");
+    expect(formatDuration(60)).toBe("1h 00m");
+    expect(formatDuration(125)).toBe("2h 05m");
+    // Rounded as a whole: the old dashboard formatter printed "1h 60m" here.
+    expect(formatDuration(119.6)).toBe("2h 00m");
+    expect(formatDuration(-5)).toBe("0m");
   });
 });
 

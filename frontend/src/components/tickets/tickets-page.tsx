@@ -1,13 +1,16 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import dynamic from "next/dynamic";
-import { Plus } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
 import { MotionConfig, motion, useReducedMotion } from "framer-motion";
+import { toast } from "sonner";
 
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader, PrimaryAction } from "@/components/layout/page-header";
 import type { ComboOption } from "@/components/common/search-combobox";
 import type { TicketStatus } from "@/types/tickets";
+import type { ApiError } from "@/lib/api";
+import { parseTicketDeepLink, type TicketDeepLink } from "@/lib/attention";
 import { EASE } from "@/lib/motion";
 import {
   ticketExportPath,
@@ -17,10 +20,8 @@ import {
   type TicketListResponse,
 } from "@/lib/tickets-api";
 import { useApiGet } from "@/hooks/use-api";
-import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { ExportButton } from "@/components/common/export-button";
-import { Toaster } from "@/components/ui/sonner";
 import { TicketsPagination } from "@/components/tickets/tickets-pagination";
 import { TicketsTableView, type TicketsEmptyKind } from "@/components/tickets/tickets-table";
 import {
@@ -29,6 +30,8 @@ import {
   type TicketsViewState,
 } from "@/components/tickets/tickets-table-config";
 import { TicketsToolbar } from "@/components/tickets/tickets-toolbar";
+import type { TabId } from "@/components/tickets/ticket-form/form-model";
+import { useUrgentTickets } from "@/components/attention/urgent-tickets-provider";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -78,21 +81,83 @@ function viewQuery(view: TicketsViewState): TicketListQuery {
 }
 
 /**
+ * The editable AMS Tickets page, reading the deep link
+ * `?edit=<id>&tab=<tab>` (e.g. from "Close ticket" in the attention alert):
+ * it opens that ticket's edit dialog on that tab, and closing the dialog
+ * removes the params. The read-only Reports table never reads the URL.
+ */
+export function EditableTicketsPage() {
+  // useSearchParams needs a Suspense boundary (as on Job Sheets).
+  return (
+    <Suspense fallback={null}>
+      <TicketsPageFromUrl />
+    </Suspense>
+  );
+}
+
+function TicketsPageFromUrl() {
+  const params = useSearchParams();
+  const router = useRouter();
+  const pathname = usePathname();
+  const deepLink = parseTicketDeepLink(params);
+  const hasParams = params.has("edit") || params.has("tab");
+  const clear = useCallback(() => router.replace(pathname, { scroll: false }), [router, pathname]);
+  // A malformed link (e.g. ?edit=abc) opens nothing; just tidy the URL.
+  useEffect(() => {
+    if (hasParams && !deepLink) clear();
+  }, [hasParams, deepLink, clear]);
+  return <TicketsPage deepLink={deepLink} onDeepLinkDone={clear} />;
+}
+
+type DialogState = {
+  open: boolean;
+  key: number;
+  ticketId?: number;
+  initialTab?: TabId;
+  /** Opened from the URL: closing it clears the params. */
+  fromLink?: boolean;
+};
+
+/**
  * The AMS Tickets table with its search, filters and paging. `readOnly` is
  * the Reports page's version: no page header or New Ticket, no Edit column
  * or ticket dialog, and an Export CSV of the current view instead (the page
  * around it supplies the title and the toast container).
  */
-export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
+export function TicketsPage({
+  readOnly = false,
+  deepLink = null,
+  onDeepLinkDone,
+}: {
+  readOnly?: boolean;
+  /** Editable page only: a ticket to open from the URL (see EditableTicketsPage). */
+  deepLink?: TicketDeepLink | null;
+  onDeepLinkDone?: () => void;
+}) {
   const reduceMotion = useReducedMotion();
+  const urgent = useUrgentTickets();
   const [view, setView] = useState<TicketsViewState>(DEFAULT_VIEW);
   const [query, setQuery] = useState("");
   const [advancedOpen, setAdvancedOpen] = useState(false);
   // One dialog for both flows: no ticketId = create, a ticketId = edit.
-  const [dialog, setDialog] = useState<{ open: boolean; key: number; ticketId?: number }>({
-    open: false,
-    key: 0,
-  });
+  const [dialog, setDialog] = useState<DialogState>({ open: false, key: 0 });
+
+  // Open the linked ticket once per distinct link (adjusting state during
+  // render, React's pattern for "respond to a prop change").
+  const linkKey = !readOnly && deepLink ? `${deepLink.ticketId}:${deepLink.tab ?? ""}` : null;
+  const [seenLink, setSeenLink] = useState<string | null>(null);
+  if (linkKey !== seenLink) {
+    setSeenLink(linkKey);
+    if (deepLink && linkKey) {
+      setDialog((d) => ({
+        open: true,
+        key: d.key + 1,
+        ticketId: deepLink.ticketId,
+        initialTab: deepLink.tab,
+        fromLink: true,
+      }));
+    }
+  }
 
   const list = useApiGet<TicketListResponse>(ticketListPath(viewQuery(view)), {
     keepPreviousData: true,
@@ -149,6 +214,23 @@ export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
   const openEditTicket = (id: string) =>
     setDialog((d) => ({ open: true, key: d.key + 1, ticketId: Number(id) }));
 
+  const closeDialog = () => {
+    setDialog((d) => ({ ...d, open: false }));
+    if (dialog.fromLink) onDeepLinkDone?.();
+  };
+  const linkedTicketFailed = useCallback(
+    (error: ApiError) => {
+      toast.error(
+        error.status === 404
+          ? "That ticket wasn't found."
+          : "Couldn't open that ticket. Try again.",
+      );
+      setDialog((d) => ({ ...d, open: false }));
+      onDeepLinkDone?.();
+    },
+    [onDeepLinkDone],
+  );
+
   // After creating a ticket: back to the default "newest first" view with no
   // search or filters, so the new ticket is at (or near) the top, and refetch.
   const showCreated = () => {
@@ -169,29 +251,12 @@ export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
       <div className="flex min-h-[34rem] w-full flex-1 flex-col gap-5">
         {!readOnly && (
           <Enter delay={0}>
-            <div className="grid gap-3">
-              <Breadcrumb items={[{ label: "AMS Tickets" }]} />
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-extrabold tracking-tight">AMS Tickets</h1>
-                {/* The page's primary action: full-size, brand orange, a lift on
-                  hover and a press-in on click (same feel as the cards). */}
-                <motion.div
-                  whileHover={{ y: -1 }}
-                  whileTap={{ scale: 0.97 }}
-                  transition={{ duration: 0.16, ease: EASE }}
-                >
-                  <Button
-                    size="lg"
-                    onClick={openNewTicket}
-                    className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
-                  >
-                    <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
-                    New Ticket
-                  </Button>
-                </motion.div>
-              </div>
-            </div>
+            <PageHeader
+              trail={[{ label: "AMS Tickets" }]}
+              title="AMS Tickets"
+              description="Every support ticket, with its activities and verification."
+              actions={<PrimaryAction onClick={openNewTicket}>New ticket</PrimaryAction>}
+            />
           </Enter>
         )}
 
@@ -243,14 +308,20 @@ export function TicketsPage({ readOnly = false }: { readOnly?: boolean }) {
           key={dialog.key}
           open={dialog.open}
           ticketId={dialog.ticketId}
-          onOpenChange={(open) => setDialog((d) => ({ ...d, open }))}
+          initialTab={dialog.initialTab}
+          onOpenChange={(open) => (open ? setDialog((d) => ({ ...d, open })) : closeDialog())}
           // A new ticket: jump to the default view so it's visible. An edit:
           // refetch the current page in place, so e.g. a just-closed ticket
-          // shows as Closed straight away.
-          onSaved={dialog.ticketId === undefined ? showCreated : list.retry}
+          // shows as Closed straight away. Either way the attention data
+          // (badge, Home box) is refreshed.
+          onSaved={() => {
+            if (dialog.ticketId === undefined) showCreated();
+            else list.retry();
+            urgent.refresh();
+          }}
+          onLoadError={dialog.fromLink ? linkedTicketFailed : undefined}
         />
       )}
-      {!readOnly && <Toaster position="bottom-right" />}
     </MotionConfig>
   );
 }

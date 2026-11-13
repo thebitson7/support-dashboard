@@ -8,9 +8,7 @@ from rest_framework.views import APIView
 @extend_schema(
     summary="Health check",
     auth=[],
-    responses=inline_serializer(
-        "Ping", {"status": serializers.CharField(), "message": serializers.CharField()}
-    ),
+    responses=inline_serializer("Ping", {"status": serializers.CharField(), "message": serializers.CharField()}),
 )
 class PingView(APIView):
     """

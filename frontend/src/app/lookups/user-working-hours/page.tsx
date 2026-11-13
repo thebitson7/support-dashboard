@@ -22,7 +22,7 @@ import { displayName, useAuth } from "@/lib/auth";
 import { EASE, markChoreographyStart } from "@/lib/motion";
 import { toPeriodSummary, userQuery } from "@/lib/working-hours";
 import { useApiGet } from "@/hooks/use-api";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader } from "@/components/layout/page-header";
 import { PeriodCardsSkeleton } from "@/components/dashboard/dashboard-skeleton";
 import { MotionRoot } from "@/components/dashboard/motion-root";
 import { PeriodCards } from "@/components/dashboard/period-cards";
@@ -164,7 +164,8 @@ function ErrorCard({
 
 // --- Summary ------------------------------------------------------------------
 
-const timeFormat = new Intl.DateTimeFormat(undefined, { hour: "numeric", minute: "2-digit" });
+// "3:42 PM": a fixed locale, like every other time in the app (not the browser's).
+const timeFormat = new Intl.DateTimeFormat("en-US", { hour: "numeric", minute: "2-digit" });
 
 /**
  * "As of 3:42 PM" + the zone the periods were cut in + a manual refresh. The
@@ -310,23 +311,21 @@ function AdminView() {
         userId={selectedId}
         enabled={Boolean(selected)}
         header={(jobSheetLink) => (
-          <header className="grid gap-3">
-            <Breadcrumb items={[{ label: "Lookups" }, { label: "User Working Hours" }]} />
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div>
-                <h1 className="text-2xl font-extrabold tracking-tight">User Working Hours</h1>
-                <p className="text-label">
-                  {selected
-                    ? `Logged hours for ${displayName(selected)}`
-                    : "Pick a team member to see their logged hours"}
-                </p>
-              </div>
-              <div className="flex flex-wrap items-center gap-3">
+          <PageHeader
+            trail={[{ label: "Lookups" }, { label: "User Working Hours" }]}
+            title="User Working Hours"
+            description={
+              selected
+                ? `Logged hours for ${displayName(selected)}`
+                : "Pick a team member to see their logged hours"
+            }
+            actions={
+              <>
                 <UserPicker users={users.data} value={selectedId} onChange={setSelectedId} />
                 {jobSheetLink}
-              </div>
-            </div>
-          </header>
+              </>
+            }
+          />
         )}
         placeholder={
           users.error ? (
@@ -355,16 +354,12 @@ function StaffView() {
       userId={null}
       enabled
       header={(jobSheetLink) => (
-        <header className="grid gap-3">
-          <Breadcrumb items={[{ label: "Lookups" }, { label: "User Working Hours" }]} />
-          <div className="flex flex-wrap items-center justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">Your Working Hours</h1>
-              <p className="text-label">Your logged AMS and Non-AMS hours against goal</p>
-            </div>
-            {jobSheetLink}
-          </div>
-        </header>
+        <PageHeader
+          trail={[{ label: "Lookups" }, { label: "User Working Hours" }]}
+          title="Your Working Hours"
+          description="Your logged AMS and Non-AMS hours against goal"
+          actions={jobSheetLink}
+        />
       )}
     />
   );

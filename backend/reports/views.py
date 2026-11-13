@@ -7,7 +7,6 @@ this app writes.
 from datetime import date, timedelta
 
 from django.db.models import Q
-from django.utils.dateparse import parse_date
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, PolymorphicProxySerializer, extend_schema
 from rest_framework.exceptions import NotFound, ValidationError
@@ -17,9 +16,10 @@ from rest_framework.views import APIView
 
 from accounts.models import User
 from accounts.permissions import IsAdminRole
-from accounts.throttling import ExportRateThrottle
 from accounts.serializers import UserSummarySerializer
+from accounts.throttling import ExportRateThrottle
 from core.exports import csv_response, text_cell
+from core.params import positive_id, query_day
 from working_hours.models import WorkLogEntry
 from working_hours.openapi import MemberActivity, TeamActivity
 from working_hours.periods import local_today
@@ -30,20 +30,6 @@ from working_hours.totals import Totals, entry_minutes, total_expressions
 # A year (plus a leap day) at most per request: plenty for any report, and
 # it keeps one response (entries included) a reasonable size.
 MAX_RANGE_DAYS = 366
-# Ids beyond this overflow the database integer type (a 500, not a 400).
-MAX_ID = 2**63 - 1
-
-def _parse_day(params, name: str) -> date | None:
-    raw = params.get(name)
-    if not raw:
-        return None
-    try:
-        value = parse_date(raw)
-    except ValueError:  # well-formed but impossible, e.g. 2026-02-30
-        value = None
-    if value is None:
-        raise ValidationError({name: "Use a YYYY-MM-DD date."})
-    return value
 
 
 def report_range(request) -> tuple[date, date]:
@@ -55,8 +41,8 @@ def report_range(request) -> tuple[date, date]:
     today = local_today(request.user)
     month_start = today.replace(day=1)
     month_end = (month_start + timedelta(days=32)).replace(day=1) - timedelta(days=1)
-    start = _parse_day(request.query_params, "start_date") or month_start
-    end = _parse_day(request.query_params, "end_date") or month_end
+    start = query_day(request.query_params, "start_date") or month_start
+    end = query_day(request.query_params, "end_date") or month_end
     if start > end:
         raise ValidationError({"end_date": "The end date must be on or after the start date."})
     if (end - start).days + 1 > MAX_RANGE_DAYS:
@@ -73,11 +59,8 @@ def report_user(request) -> User | None:
     raw = request.query_params.get("user_id")
     if raw is None:
         return None
-    raw = raw.strip()
-    # isascii() matters: str.isdigit() accepts "²", which int() rejects.
-    if not (raw.isascii() and raw.isdigit()) or not 0 < int(raw) <= MAX_ID:
-        raise ValidationError({"user_id": "Must be a positive integer user id."})
-    user = User.objects.filter(pk=int(raw)).first()
+    user_id = positive_id(raw.strip(), "user_id", "Must be a positive integer user id.")
+    user = User.objects.filter(pk=user_id).first()
     if user is None:
         raise NotFound("User not found.")
     return user

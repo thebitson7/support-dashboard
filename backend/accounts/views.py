@@ -10,7 +10,7 @@ from rest_framework.views import APIView
 from rest_framework_simplejwt.exceptions import TokenError
 from rest_framework_simplejwt.settings import api_settings as jwt_settings
 from rest_framework_simplejwt.tokens import RefreshToken
-from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView
+from rest_framework_simplejwt.views import TokenBlacklistView, TokenObtainPairView, TokenRefreshView
 
 from audit.log import log_action, person
 from audit.models import AuditLogEntry
@@ -23,6 +23,17 @@ from .throttling import AdminWriteRateThrottle, LoginRateThrottle
 USER_SEARCH_LIMIT = 20
 
 
+@extend_schema_view(
+    post=extend_schema(
+        summary="Sign in (get a token pair)",
+        auth=[],
+        description=(
+            "Username and password for an access token (5 minutes) and a refresh token "
+            "(1 day). Rate limited per username + client IP (429 with `Retry-After`); "
+            "every attempt for a real account is recorded in the audit log."
+        ),
+    )
+)
 class ThrottledTokenObtainPairView(TokenObtainPairView):
     """JWT sign-in, rate limited per username + client IP (429 + Retry-After)."""
 
@@ -64,6 +75,13 @@ class ThrottledTokenObtainPairView(TokenObtainPairView):
         return response
 
 
+@extend_schema_view(
+    post=extend_schema(
+        summary="Sign out (revoke a refresh token)",
+        auth=[],
+        description="Blacklists the refresh token so it can never be used again, and records the sign-out.",
+    )
+)
 class LogoutView(TokenBlacklistView):
     """
     Sign-out: blacklists the refresh token (so it can never be used again)
@@ -89,6 +107,17 @@ class LogoutView(TokenBlacklistView):
                 request=request,
             )
         return response
+
+
+@extend_schema_view(
+    post=extend_schema(
+        summary="Refresh the access token",
+        auth=[],
+        description="A new access token for a valid refresh token. The refresh token itself is not rotated.",
+    )
+)
+class DocumentedTokenRefreshView(TokenRefreshView):
+    """simplejwt's refresh view, unchanged; only documented."""
 
 
 @extend_schema(summary="The signed-in user", responses=UserSummarySerializer)
@@ -117,13 +146,9 @@ class UserSearchView(ListAPIView):
 
     def get_queryset(self):
         term = self.request.query_params.get("q", "").strip()
-        qs = User.objects.filter(is_active=True).annotate(
-            full_name=Concat("first_name", Value(" "), "last_name")
-        )
+        qs = User.objects.filter(is_active=True).annotate(full_name=Concat("first_name", Value(" "), "last_name"))
         if term:
-            qs = qs.filter(
-                Q(username__icontains=term) | Q(full_name__icontains=term)
-            )
+            qs = qs.filter(Q(username__icontains=term) | Q(full_name__icontains=term))
         return qs.order_by("first_name", "last_name", "username")[:USER_SEARCH_LIMIT]
 
 
@@ -136,6 +161,10 @@ class AdminAccessMixin(GenericAPIView):
     queryset = User.objects.all()
 
 
+@extend_schema_view(
+    get=extend_schema(summary="List all users (admin only)"),
+    post=extend_schema(summary="Create a user (admin only)"),
+)
 class AdminUserListCreateView(AdminAccessMixin, ListCreateAPIView):
     """
     GET: every user, active or not, staff or admin (?search= over username
@@ -160,11 +189,20 @@ class AdminUserListCreateView(AdminAccessMixin, ListCreateAPIView):
                 f"{person(self.request.user)} created an account for {person(user)} "
                 f"({user.username}, {user.get_role_display()})"
             ),
-            metadata={"username": user.username, "role": user.role, "timezone": user.timezone, "is_active": user.is_active},
+            metadata={
+                "username": user.username,
+                "role": user.role,
+                "timezone": user.timezone,
+                "is_active": user.is_active,
+            },
             request=self.request,
         )
 
 
+@extend_schema_view(
+    get=extend_schema(summary="Get a user (admin only)"),
+    patch=extend_schema(summary="Edit a user (admin only)"),
+)
 class AdminUserDetailView(AdminAccessMixin, RetrieveUpdateAPIView):
     """
     GET one user; PATCH their name, role, time zone, active status, or a
@@ -177,7 +215,9 @@ class AdminUserDetailView(AdminAccessMixin, RetrieveUpdateAPIView):
     def perform_update(self, serializer):
         # Read before saving: the serializer consumes new_password.
         resetting = bool(serializer.validated_data.get("new_password"))
-        before = {f: getattr(serializer.instance, f) for f in ("first_name", "last_name", "timezone", "role", "is_active")}
+        before = {
+            f: getattr(serializer.instance, f) for f in ("first_name", "last_name", "timezone", "role", "is_active")
+        }
         user = serializer.save()
         log_user_changes(self.request, user, before, resetting)
 
@@ -193,7 +233,9 @@ def log_user_changes(request, user, before: dict, password_reset: bool) -> None:
     whose, label = f"{person(user)}'s", f"User: {person(user)}"
 
     def entry(action, description, metadata=None):
-        log_action(actor, action, target=user, target_label=label, description=description, metadata=metadata, request=request)
+        log_action(
+            actor, action, target=user, target_label=label, description=description, metadata=metadata, request=request
+        )
 
     if before["role"] != user.role:
         old, new = User.Role(before["role"]).label, user.get_role_display()

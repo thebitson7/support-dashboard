@@ -64,8 +64,7 @@ def database_from_url(url: str) -> dict:
 SECRET_KEY = os.environ.get("SECRET_KEY")
 if not SECRET_KEY:
     raise ImproperlyConfigured(
-        "SECRET_KEY is not set. Copy backend/.env.example to backend/.env and set a "
-        "long random value."
+        "SECRET_KEY is not set. Copy backend/.env.example to backend/.env and set a long random value."
     )
 
 # Off unless explicitly enabled.
@@ -227,15 +226,18 @@ SPECTACULAR_SETTINGS = {
     "VERSION": "1.0.0",
     # The schema endpoint itself isn't part of the API.
     "SERVE_INCLUDE_SCHEMA": False,
-    "SERVE_PERMISSIONS": (
-        ["rest_framework.permissions.AllowAny"] if DEBUG else ["accounts.permissions.IsAdminRole"]
-    ),
+    "SERVE_PERMISSIONS": (["rest_framework.permissions.AllowAny"] if DEBUG else ["accounts.permissions.IsAdminRole"]),
     # Request and response shapes as separate components where they differ
     # (e.g. read-only fields), so the documented request bodies are accurate.
     "COMPONENT_SPLIT_REQUEST": True,
     # One named enum for the audit actions wherever they appear (entries, the
     # `action` filter, the actions list).
-    "ENUM_NAME_OVERRIDES": {"AuditActionEnum": "audit.models.AuditLogEntry.Action"},
+    # The attention roles and levels likewise (tickets waiting to be closed).
+    "ENUM_NAME_OVERRIDES": {
+        "AuditActionEnum": "audit.models.AuditLogEntry.Action",
+        "AttentionRoleEnum": "tickets.serializers.ATTENTION_ROLES",
+        "AttentionLevelEnum": "tickets.attention.Level",
+    },
     # A fixed Swagger UI release from the CDN (the default is "@latest").
     "SWAGGER_UI_DIST": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0",
     "SWAGGER_UI_FAVICON_HREF": "https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.33.0/favicon-32x32.png",

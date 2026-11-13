@@ -13,9 +13,7 @@ class Country(models.Model):
         "ISO code",
         max_length=2,
         unique=True,
-        validators=[
-            RegexValidator(r"^[A-Z]{2}$", "Use the 2-letter ISO 3166-1 code, e.g. MY.")
-        ],
+        validators=[RegexValidator(r"^[A-Z]{2}$", "Use the 2-letter ISO 3166-1 code, e.g. MY.")],
         help_text="ISO 3166-1 alpha-2, e.g. MY, SG, PH (stored uppercase).",
     )
 
@@ -36,9 +34,7 @@ class Country(models.Model):
 class Site(models.Model):
     name = models.CharField(max_length=200)
     ocn = models.CharField("OCN", max_length=50)
-    country = models.ForeignKey(
-        Country, on_delete=models.PROTECT, null=True, blank=True, related_name="sites"
-    )
+    country = models.ForeignKey(Country, on_delete=models.PROTECT, null=True, blank=True, related_name="sites")
     address = models.CharField(max_length=300, blank=True)
     # Inactive sites are hidden from the ticket form's typeahead but stay on
     # the Sites lookup page (and on the tickets that already reference them).
@@ -176,6 +172,13 @@ class Ticket(models.Model):
     created_by = user_fk("created_tickets")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+    # Closure timing, recorded by the system (never client-writable): when
+    # the ticket was actually closed in this app (not the user-typed, possibly
+    # backdated cms_closed_on), and how long it had waited since its clock
+    # started (see tickets/attention.py). Both cleared on reopen. Set by the
+    # ticket write serializer only; tickets closed before this existed stay null.
+    closed_recorded_at = models.DateTimeField(null=True, blank=True, editable=False)
+    closure_lag_minutes = models.PositiveIntegerField(null=True, blank=True, editable=False)
 
     class Meta:
         ordering = ["-received_at", "-id"]
@@ -194,6 +197,23 @@ class Ticket(models.Model):
         return "closed" if self.cms_closed_on else "open"
 
 
+# All five together close a ticket (filling them is closing it; clearing all
+# five reopens it). The write serializer's all-or-nothing rule and the audit
+# log's "closed / reopened" wording both use this one list.
+VERIFICATION_FIELDS = (
+    "resolution_verified_by",
+    "resolution_verified_on",
+    "cms_closed_by",
+    "cms_closed_on",
+    "service_closed_date",
+)
+
+
+def ticket_label(ticket: Ticket) -> str:
+    """ "Ticket #152172RA2778834": the CMS number people know a ticket by."""
+    return f"Ticket #{ticket.cms_next_ticket_no}"
+
+
 class TicketActivity(models.Model):
     class Type(models.TextChoices):
         TROUBLESHOOTING = "troubleshooting", "Troubleshooting"
@@ -207,9 +227,7 @@ class TicketActivity(models.Model):
     activity_type = models.CharField(max_length=20, choices=Type.choices)
     start_at = models.DateTimeField()
     end_at = models.DateTimeField()
-    duration_minutes = models.PositiveIntegerField(
-        blank=True, help_text="Computed from start/end when left empty."
-    )
+    duration_minutes = models.PositiveIntegerField(blank=True, help_text="Computed from start/end when left empty.")
     work_done_code = models.ForeignKey(WorkDoneCode, on_delete=models.PROTECT)
     is_likely_cause = models.BooleanField(
         "likely cause",

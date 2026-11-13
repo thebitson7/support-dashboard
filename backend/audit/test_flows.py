@@ -24,7 +24,9 @@ LOGS = "/api/audit/logs/"
 class AuditFlowTests(APITestCase):
     def setUp(self):
         cache.clear()
-        self.admin = User.objects.create_user("aisha", password=PASSWORD, first_name="Aisha", last_name="Rahman", role=User.Role.ADMIN)
+        self.admin = User.objects.create_user(
+            "aisha", password=PASSWORD, first_name="Aisha", last_name="Rahman", role=User.Role.ADMIN
+        )
         self.ravi = User.objects.create_user("ravi", password=PASSWORD, first_name="Ravi", last_name="Kumar")
         self.site = Site.objects.create(name="Tan Tock Seng Hospital", ocn="OCN05529")
         self.customer = Customer.objects.create(name="SingHealth")
@@ -86,7 +88,12 @@ class AuditFlowTests(APITestCase):
             "service_closed_date": now,
         }
         second = self.activity(2, 45, "follow_up")
-        for body in (verification, dict.fromkeys(verification), {"activities": [first, second]}, {"activities": [second]}):
+        for body in (
+            verification,
+            dict.fromkeys(verification),
+            {"activities": [first, second]},
+            {"activities": [second]},
+        ):
             response = self.client.patch(url, body, format="json")
             self.assertEqual(response.status_code, 200, response.content)
 
@@ -96,23 +103,40 @@ class AuditFlowTests(APITestCase):
             [A.TICKET_CREATED, A.TICKET_CLOSED, A.TICKET_REOPENED, A.TICKET_ACTIVITY_ADDED, A.TICKET_ACTIVITY_REMOVED],
         )
         descriptions = [e.description for e in entries]
-        self.assertEqual(descriptions[0], "Ravi Kumar created ticket #CMS1001 for Tan Tock Seng Hospital with 1 activity")
-        self.assertEqual(descriptions[1:3], ["Ravi Kumar closed ticket #CMS1001", "Ravi Kumar reopened ticket #CMS1001"])
+        self.assertEqual(
+            descriptions[0], "Ravi Kumar created ticket #CMS1001 for Tan Tock Seng Hospital with 1 activity"
+        )
+        self.assertEqual(
+            descriptions[1:3], ["Ravi Kumar closed ticket #CMS1001", "Ravi Kumar reopened ticket #CMS1001"]
+        )
         self.assertRegex(descriptions[3], r"^Ravi Kumar added a Follow-up activity \(.+, 45m\) to ticket #CMS1001$")
-        self.assertRegex(descriptions[4], r"^Ravi Kumar removed a Troubleshooting activity \(.+, 1h 30m\) from ticket #CMS1001$")
+        self.assertRegex(
+            descriptions[4], r"^Ravi Kumar removed a Troubleshooting activity \(.+, 1h 30m\) from ticket #CMS1001$"
+        )
         self.assertTrue(all(e.actor == self.ravi and e.target_label == "Ticket #CMS1001" for e in entries))
 
     def test_manual_hours(self):
         self.sign_in("ravi")
         start = self.mark()
-        entry_id = self.client.post("/api/working-hours/entries/", {"start_time": "09:00", "end_time": "10:30"}, format="json").json()["id"]
-        self.assertEqual(self.client.patch(f"/api/working-hours/entries/{entry_id}/", {"end_time": "11:00"}, format="json").status_code, 200)
+        entry_id = self.client.post(
+            "/api/working-hours/entries/", {"start_time": "09:00", "end_time": "10:30"}, format="json"
+        ).json()["id"]
+        self.assertEqual(
+            self.client.patch(
+                f"/api/working-hours/entries/{entry_id}/", {"end_time": "11:00"}, format="json"
+            ).status_code,
+            200,
+        )
         self.assertEqual(self.client.delete(f"/api/working-hours/entries/{entry_id}/").status_code, 204)
 
         entries = self.since(start)
         self.assertEqual([e.action for e in entries], [A.WORK_LOG_CREATED, A.WORK_LOG_UPDATED, A.WORK_LOG_DELETED])
-        self.assertRegex(entries[0].description, r"^Ravi Kumar logged 1h 30m of Non-AMS work \(9:00 AM – 10:30 AM\) on ")
-        self.assertRegex(entries[1].description, r"^Ravi Kumar edited hours: now 2h 00m of Non-AMS work \(9:00 AM – 11:00 AM\) on ")
+        self.assertRegex(
+            entries[0].description, r"^Ravi Kumar logged 1h 30m of Non-AMS work \(9:00 AM – 10:30 AM\) on "
+        )
+        self.assertRegex(
+            entries[1].description, r"^Ravi Kumar edited hours: now 2h 00m of Non-AMS work \(9:00 AM – 11:00 AM\) on "
+        )
         self.assertRegex(entries[2].description, r"^Ravi Kumar deleted 2h 00m of Non-AMS work ")
         self.assertEqual({e.target_id for e in entries}, {str(entry_id)})
 
@@ -123,7 +147,14 @@ class AuditFlowTests(APITestCase):
         users = "/api/accounts/admin/users/"
         farah = self.client.post(
             users,
-            {"username": "farah", "first_name": "Farah", "last_name": "Aziz", "role": "staff", "timezone": "Asia/Kuala_Lumpur", "password": first_password},
+            {
+                "username": "farah",
+                "first_name": "Farah",
+                "last_name": "Aziz",
+                "role": "staff",
+                "timezone": "Asia/Kuala_Lumpur",
+                "password": first_password,
+            },
             format="json",
         ).json()
         for body in ({"role": "admin"}, {"new_password": reset_password}, {"is_active": False}):
@@ -157,7 +188,9 @@ class AuditFlowTests(APITestCase):
         start = self.mark()
         refresh = self.sign_in("ravi")
         self.client.credentials()
-        self.assertEqual(self.client.post("/api/auth/token/blacklist/", {"refresh": refresh}, format="json").status_code, 200)
+        self.assertEqual(
+            self.client.post("/api/auth/token/blacklist/", {"refresh": refresh}, format="json").status_code, 200
+        )
         self.assertEqual(
             [(e.action, e.description, e.actor) for e in self.since(start)],
             [(A.LOGIN, "Ravi Kumar signed in", self.ravi), (A.LOGOUT, "Ravi Kumar signed out", self.ravi)],
@@ -173,7 +206,9 @@ class AuditFlowTests(APITestCase):
         # Some varied traffic from two people.
         self.sign_in("ravi")
         for start_time, end_time in (("08:00", "08:30"), ("09:00", "09:45"), ("13:00", "14:00")):
-            self.client.post("/api/working-hours/entries/", {"start_time": start_time, "end_time": end_time}, format="json")
+            self.client.post(
+                "/api/working-hours/entries/", {"start_time": start_time, "end_time": end_time}, format="json"
+            )
         self.sign_in("aisha")
         self.client.post("/api/lookups/customers/", {"name": "KPJ Healthcare"}, format="json")
         today = timezone.localdate(timezone=self.admin.tzinfo).isoformat()

@@ -8,9 +8,7 @@ from .models import User
 
 @admin.register(User)
 class UserAdmin(BaseUserAdmin):
-    list_display = (
-        "username", "first_name", "last_name", "role", "timezone", "is_staff", "is_active"
-    )
+    list_display = ("username", "first_name", "last_name", "role", "timezone", "is_staff", "is_active")
     list_filter = ("role", *BaseUserAdmin.list_filter)
     # `or ()`: fieldsets is Optional on ModelAdmin; UserAdmin always sets it.
     fieldsets = (*(BaseUserAdmin.fieldsets or ()), ("Role & locale", {"fields": ("role", "timezone")}))

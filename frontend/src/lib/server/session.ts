@@ -102,11 +102,6 @@ export async function callDjango(
 }
 
 /**
- * Relays Django's status, body, and a short allow-list of headers to the
- * browser, nothing else. The body is passed through as bytes: decoding it as
- * text would drop a CSV's UTF-8 byte-order mark, which Excel relies on.
- */
-/**
  * The browser's address, for Django's sign-in throttle and audit log: the
  * right-most X-Forwarded-For entry (the one the nearest proxy added; Next.js
  * fills it with the socket address when no proxy sent one), and only if it's
@@ -117,6 +112,11 @@ export function clientAddress(request: NextRequest): string | null {
   return isIP(last) ? last : null;
 }
 
+/**
+ * Relays Django's status, body, and a short allow-list of headers to the
+ * browser, nothing else. The body is passed through as bytes: decoding it as
+ * text would drop a CSV's UTF-8 byte-order mark, which Excel relies on.
+ */
 export async function relay(upstream: Response): Promise<NextResponse> {
   // An error that isn't the API's JSON (Django's DEBUG traceback, with
   // settings and paths in it; an HTML 404/500 page) never leaves this server:

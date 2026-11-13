@@ -5,7 +5,6 @@ import { motion, MotionConfig, useReducedMotion } from "framer-motion";
 import {
   LoaderCircle,
   Pencil,
-  Plus,
   Search,
   SearchX,
   ShieldCheck,
@@ -23,7 +22,8 @@ import { displayName, type AuthUser } from "@/lib/auth";
 import { formatLocalDisplay, isoToLocal } from "@/lib/local-datetime";
 import { EASE } from "@/lib/motion";
 import { useApiGet } from "@/hooks/use-api";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader, PrimaryAction } from "@/components/layout/page-header";
+import { ActiveBadge } from "@/components/common/tone-badge";
 import { SortIcon } from "@/components/common/sort-icon";
 import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { UserFormDialog } from "@/components/administration/user-form-dialog";
@@ -39,7 +39,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Toaster } from "@/components/ui/sonner";
 
 const SEARCH_DEBOUNCE_MS = 250;
 
@@ -63,24 +62,6 @@ function RoleBadge({ role }: { role: AdminUser["role"] }) {
     >
       {admin && <ShieldCheck className="size-3.5 text-primary" aria-hidden />}
       {admin ? "Admin" : "Staff"}
-    </span>
-  );
-}
-
-function StatusBadge({ active }: { active: boolean }) {
-  const token = active ? "var(--chart-success)" : "var(--muted-foreground)";
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold"
-      style={{
-        color: active
-          ? "color-mix(in oklab, var(--chart-success), var(--foreground) 45%)"
-          : undefined,
-        backgroundColor: `color-mix(in oklab, ${token} 14%, transparent)`,
-      }}
-    >
-      <span aria-hidden className="size-1.5 rounded-full" style={{ backgroundColor: token }} />
-      {active ? "Active" : "Inactive"}
     </span>
   );
 }
@@ -121,7 +102,7 @@ const COLUMNS: Column[] = [
     id: "status",
     header: "Status",
     sortKey: "is_active",
-    cell: (u) => <StatusBadge active={u.is_active} />,
+    cell: (u) => <ActiveBadge active={u.is_active} />,
   },
   {
     id: "last_login",
@@ -380,31 +361,12 @@ export function UsersPage({ viewer }: { viewer: AuthUser }) {
         transition={{ duration: 0.45, ease: EASE }}
         className="mx-auto flex min-h-[30rem] w-full max-w-6xl flex-1 flex-col gap-5"
       >
-        <div className="grid gap-3">
-          <Breadcrumb items={[{ label: "Administration" }]} />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">Administration</h1>
-              <p className="text-label">
-                Accounts, roles and access. People are deactivated, never deleted.
-              </p>
-            </div>
-            <motion.div
-              whileHover={{ y: -1 }}
-              whileTap={{ scale: 0.97 }}
-              transition={{ duration: 0.16, ease: EASE }}
-            >
-              <Button
-                size="lg"
-                onClick={() => openForm(null)}
-                className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
-              >
-                <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
-                Add user
-              </Button>
-            </motion.div>
-          </div>
-        </div>
+        <PageHeader
+          trail={[{ label: "Administration" }]}
+          title="Administration"
+          description="Accounts, roles and access. People are deactivated, never deleted."
+          actions={<PrimaryAction onClick={() => openForm(null)}>Add user</PrimaryAction>}
+        />
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <div className="relative w-full max-w-md flex-1">
@@ -487,7 +449,6 @@ export function UsersPage({ viewer }: { viewer: AuthUser }) {
           )}
         </AlertDialogContent>
       </AlertDialog>
-      <Toaster position="bottom-right" />
     </MotionConfig>
   );
 }

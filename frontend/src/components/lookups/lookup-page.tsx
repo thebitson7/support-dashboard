@@ -19,7 +19,7 @@ import { ApiError, apiDelete } from "@/lib/api";
 import { useAuth } from "@/lib/auth";
 import { EASE } from "@/lib/motion";
 import { useApiGet } from "@/hooks/use-api";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader, PrimaryAction } from "@/components/layout/page-header";
 import { SortIcon } from "@/components/common/sort-icon";
 import { LoadErrorPlaceholder, StatePlaceholder } from "@/components/common/state-placeholder";
 import { Button } from "@/components/ui/button";
@@ -33,7 +33,6 @@ import {
 } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Toaster } from "@/components/ui/sonner";
 import { LookupFormDialog, capitalize } from "@/components/lookups/lookup-form-dialog";
 import type { LookupConfig, LookupRow } from "@/components/lookups/types";
 
@@ -313,36 +312,21 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
         transition={{ duration: 0.45, ease: EASE }}
         className="mx-auto flex min-h-[30rem] w-full max-w-6xl flex-1 flex-col gap-5"
       >
-        <div className="grid gap-3">
-          <Breadcrumb items={[{ label: "Lookups" }, { label: config.title }]} />
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="text-2xl font-extrabold tracking-tight">{config.title}</h1>
-              <p className="text-label">{config.description}</p>
-            </div>
-            {canManage ? (
-              <motion.div
-                whileHover={{ y: -1 }}
-                whileTap={{ scale: 0.97 }}
-                transition={{ duration: 0.16, ease: EASE }}
-              >
-                <Button
-                  size="lg"
-                  onClick={() => openForm(null)}
-                  className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
-                >
-                  <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
-                  Add {config.noun}
-                </Button>
-              </motion.div>
+        <PageHeader
+          trail={[{ label: "Lookups" }, { label: config.title }]}
+          title={config.title}
+          description={config.description}
+          actions={
+            canManage ? (
+              <PrimaryAction onClick={() => openForm(null)}>Add {config.noun}</PrimaryAction>
             ) : (
               <span className="inline-flex items-center gap-1.5 rounded-full bg-muted px-3 py-1 text-xs font-semibold text-muted-foreground">
                 <Eye className="size-3.5" aria-hidden />
                 View only
               </span>
-            )}
-          </div>
-        </div>
+            )
+          }
+        />
 
         <div className="flex flex-wrap items-center gap-x-5 gap-y-2">
           <div className="relative w-full max-w-md flex-1">
@@ -437,7 +421,6 @@ export function LookupPage<Row extends LookupRow>({ config }: { config: LookupCo
           )}
         </AlertDialogContent>
       </AlertDialog>
-      <Toaster position="bottom-right" />
     </MotionConfig>
   );
 }

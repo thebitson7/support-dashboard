@@ -169,12 +169,6 @@ export function activitiesTotalHours(activities: ActivityDraft[]): number {
   return Math.round((minutes / 60) * 100) / 100;
 }
 
-export function formatMinutes(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h ? `${h}h ${String(m).padStart(2, "0")}m` : `${m}m`;
-}
-
 // --- Tabs ----------------------------------------------------------------------
 
 export type TabId = "ticket" | "activities" | "verification";

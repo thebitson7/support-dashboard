@@ -1,5 +1,5 @@
-import { TicketsPage } from "@/components/tickets/tickets-page";
+import { EditableTicketsPage } from "@/components/tickets/tickets-page";
 
 export default function Page() {
-  return <TicketsPage />;
+  return <EditableTicketsPage />;
 }

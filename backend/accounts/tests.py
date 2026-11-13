@@ -158,7 +158,7 @@ class LoginRateLimitTests(AuthTestCase):
         from .throttling import client_ip
 
         factory = APIRequestFactory()
-        for bad in ("=HYPERLINK(\"http://x\")", "not-an-ip", "1.2.3.4.5", "x" * 200, ""):
+        for bad in ('=HYPERLINK("http://x")', "not-an-ip", "1.2.3.4.5", "x" * 200, ""):
             with self.subTest(bad=bad):
                 request = factory.get("/", REMOTE_ADDR="127.0.0.1", HTTP_X_FORWARDED_FOR=f"10.0.0.1, {bad}")
                 self.assertEqual(client_ip(request), "127.0.0.1")

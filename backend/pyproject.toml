@@ -10,7 +10,7 @@
 # codes. The stubs type a model's non-null fields as never None, but on an
 # unsaved instance they can be, so correct guards such as
 # `if self.start_at and self.end_at` get reported as dead code.
-python_version = "3.12"
+python_version = "3.14"  # the runtime (venv and CI)
 plugins = ["mypy_django_plugin.main", "mypy_drf_plugin.main"]
 check_untyped_defs = true
 no_implicit_optional = true
@@ -22,3 +22,17 @@ exclude = ["^venv/", "/migrations/"]
 
 [tool.django-stubs]
 django_settings_module = "config.settings"
+
+[tool.ruff]
+# Lint and format check (CI runs `ruff check .` and `ruff format --check .`).
+# Conservative on purpose: pyflakes (unused / undefined names), syntax and
+# statement errors, and import sorting; no style opinions beyond the formatter.
+line-length = 120
+target-version = "py313"  # syntax kept compatible below the 3.14 runtime (e.g. parenthesised `except (A, B)`)
+extend-exclude = ["migrations", "venv"]
+
+[tool.ruff.lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[tool.ruff.lint.isort]
+combine-as-imports = true

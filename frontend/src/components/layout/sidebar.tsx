@@ -11,12 +11,18 @@ import { Button } from "@/components/ui/button";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { ThemeToggle } from "@/components/layout/theme-toggle";
-import { navItems, type NavItem } from "@/config/nav";
+import { navItems, type NavBadgeKey, type NavItem } from "@/config/nav";
+import {
+  COLLAPSED_WIDTH,
+  EXPANDED_WIDTH,
+  getServerSnapshot,
+  getSnapshot,
+  subscribe,
+  writeCollapsed,
+} from "@/components/layout/sidebar-state";
+import { urgentCount } from "@/lib/attention";
 import { displayName, initials, useAuth, type AuthUser } from "@/lib/auth";
-
-const STORAGE_KEY = "sidebar-collapsed";
-const EXPANDED_WIDTH = 256; // w-64
-const COLLAPSED_WIDTH = 64; // w-16
+import { useUrgentTickets } from "@/components/attention/urgent-tickets-provider";
 
 // --- Motion tokens ------------------------------------------------------------
 // One easing curve ("ease-out-expo"-like) drives every sidebar animation.
@@ -32,43 +38,6 @@ const PRESS = { duration: 0.16, ease: EASE };
 // Tailwind hooks for the base-ui tooltip/popover enter (fade + scale) and a
 // quicker exit. tw-animate-css reads --tw-duration and --tw-ease.
 const POPUP_MOTION = "duration-200 ease-[cubic-bezier(0.22,1,0.36,1)] data-closed:duration-100";
-
-// --- Collapsed state, persisted in localStorage -----------------------------
-// Read through useSyncExternalStore so the server render (expanded) and the
-// first client render agree, then the stored value is applied after hydration.
-
-const listeners = new Set<() => void>();
-
-function subscribe(callback: () => void) {
-  listeners.add(callback);
-  window.addEventListener("storage", callback);
-  return () => {
-    listeners.delete(callback);
-    window.removeEventListener("storage", callback);
-  };
-}
-
-function getSnapshot() {
-  try {
-    return localStorage.getItem(STORAGE_KEY) === "1";
-  } catch {
-    return false;
-  }
-}
-
-function getServerSnapshot() {
-  return false;
-}
-
-function writeCollapsed(value: boolean) {
-  try {
-    localStorage.setItem(STORAGE_KEY, value ? "1" : "0");
-  } catch {
-    // Storage unavailable (private mode etc.) — the toggle still works, it
-    // just won't persist.
-  }
-  listeners.forEach((listener) => listener());
-}
 
 // `animated` stays false until the user first toggles, so a stored
 // "collapsed" state applies instantly on load instead of visibly animating.
@@ -155,12 +124,63 @@ function Label({ children }: { children: ReactNode }) {
   );
 }
 
+// --- Badges -------------------------------------------------------------------
+
+type NavBadgeState = { count: number; critical: boolean; description: string };
+
+/** The live count behind a nav item's `badge`, or null when there's nothing to show. */
+function useNavBadge(key: NavBadgeKey | undefined): NavBadgeState | null {
+  const { data } = useUrgentTickets();
+  if (key !== "ticketsToClose" || !data) return null;
+  const count = urgentCount(data.counts);
+  if (count === 0) return null;
+  return {
+    count,
+    critical: data.counts.critical > 0,
+    description: `${count} ${count === 1 ? "ticket needs" : "tickets need"} closing`,
+  };
+}
+
+// Fixed colours: the sidebar is navy in both themes. White on this red is
+// 5.6:1, black on the brand orange 8.3:1.
+const badgeTone = (critical: boolean) =>
+  critical ? "bg-[#c62a1d] text-white" : "bg-sidebar-primary text-sidebar-primary-foreground";
+
+function NavBadge({ badge }: { badge: NavBadgeState }) {
+  const { collapsed } = useContext(SidebarContext);
+  if (collapsed) {
+    // A dot on the icon's corner; the count is in the link's accessible name and tooltip.
+    return (
+      <span
+        aria-hidden
+        className={cn(
+          "absolute top-1.5 left-7 z-20 size-2.5 rounded-full ring-2 ring-sidebar",
+          badgeTone(badge.critical),
+        )}
+      />
+    );
+  }
+  return (
+    <span
+      aria-hidden
+      className={cn(
+        "relative z-10 grid h-5 min-w-5 shrink-0 place-items-center rounded-full px-1.5 text-[11px] font-bold tabular-nums",
+        badgeTone(badge.critical),
+      )}
+    >
+      {badge.count > 99 ? "99+" : badge.count}
+    </span>
+  );
+}
+
 // --- Items ------------------------------------------------------------------
 
 function LeafItem({ item, active }: { item: NavItem; active: boolean }) {
   const { collapsed } = useContext(SidebarContext);
+  const badge = useNavBadge(item.badge);
   // A leaf without a route is a config mistake; render nothing rather than a dead link.
   if (!item.href) return null;
+  const name = badge ? `${item.label}, ${badge.description}` : item.label;
   return (
     <Pressable>
       <Tooltip disabled={!collapsed}>
@@ -168,7 +188,7 @@ function LeafItem({ item, active }: { item: NavItem; active: boolean }) {
           render={
             <Link
               href={item.href}
-              aria-label={item.label}
+              aria-label={name}
               aria-current={active ? "page" : undefined}
               className={cn(rowBase, active ? rowActive : rowIdle)}
             />
@@ -177,9 +197,10 @@ function LeafItem({ item, active }: { item: NavItem; active: boolean }) {
           {active && <ActivePill layoutId={PILL_ID} />}
           <NavIcon icon={item.icon} />
           <Label>{item.label}</Label>
+          {badge && <NavBadge badge={badge} />}
         </TooltipTrigger>
         <TooltipContent side="right" sideOffset={16} className={POPUP_MOTION}>
-          {item.label}
+          {name}
         </TooltipContent>
       </Tooltip>
     </Pressable>

@@ -59,9 +59,7 @@ class CustomerSerializer(serializers.ModelSerializer):
 
 
 class SiteSerializer(serializers.ModelSerializer):
-    country = serializers.PrimaryKeyRelatedField(
-        queryset=Country.objects.all(), allow_null=True, required=False
-    )
+    country = serializers.PrimaryKeyRelatedField(queryset=Country.objects.all(), allow_null=True, required=False)
     country_name = serializers.CharField(source="country.name", read_only=True, default=None)
     country_code = serializers.CharField(source="country.code", read_only=True, default=None)
 
@@ -106,9 +104,7 @@ class WorkDoneCodeSerializer(serializers.ModelSerializer):
 
 
 class HolidaySerializer(serializers.ModelSerializer):
-    country = serializers.PrimaryKeyRelatedField(
-        queryset=Country.objects.all(), allow_null=True, required=False
-    )
+    country = serializers.PrimaryKeyRelatedField(queryset=Country.objects.all(), allow_null=True, required=False)
     country_name = serializers.CharField(source="country.name", read_only=True, default=None)
     country_code = serializers.CharField(source="country.code", read_only=True, default=None)
 

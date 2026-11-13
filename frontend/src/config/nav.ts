@@ -22,11 +22,19 @@ export type NavItem = {
   children?: NavItem[]; // present for expandable groups
   /** Shown to admins only (the page and its API are admin-only too). */
   adminOnly?: boolean;
+  /** A live count shown on the item (leaf items only); see NAV_BADGES in the sidebar. */
+  badge?: NavBadgeKey;
 };
+
+/**
+ * The live counts a nav item can carry. "ticketsToClose": overdue + critical
+ * tickets waiting to be closed in the viewer's scope (/api/tickets/attention/).
+ */
+export type NavBadgeKey = "ticketsToClose";
 
 export const navItems: NavItem[] = [
   { label: "Home", href: "/", icon: Home },
-  { label: "AMS Tickets", href: "/ams-tickets", icon: Ticket },
+  { label: "AMS Tickets", href: "/ams-tickets", icon: Ticket, badge: "ticketsToClose" },
   {
     label: "Lookups",
     icon: Search,

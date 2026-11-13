@@ -40,7 +40,7 @@ Install dependencies:
 
 ```bash
 pip install -r requirements.txt       # runtime only
-pip install -r requirements-dev.txt   # or: runtime + dev tools (mypy and the Django/DRF stubs)
+pip install -r requirements-dev.txt   # or: runtime + dev tools (ruff, mypy and the Django/DRF stubs)
 ```
 
 Create your local environment file:
@@ -58,8 +58,22 @@ python manage.py migrate
 python manage.py seed_users                  # local dev users (password123)
 python manage.py seed_tickets_support_data   # countries, sites, customers, work-done codes, holidays
 python manage.py seed_work_logs              # ~90 days of manual (Non-AMS) hours per staff user
+python manage.py seed_attention_demo         # optional: 4 DEMO-ATT- tickets for the "waiting to be closed" alerts
 python manage.py runserver 8000
 ```
+
+### Tickets waiting to be closed
+
+Open tickets that have sat too long since their work finished are flagged to the people named on them (creator, assignee, forward recipient, CMS adder, activity resolvers) and to admins. The flags appear in three places: a sign-in alert (shown once per tab session, only for overdue or critical tickets), a live "Needs closing" box on Home, and a count on the "AMS Tickets" sidebar item. The clock starts when the ticket's last activity ended (by anyone), or when it was received if it has no activities yet. It counts plain calendar hours, weekends and holidays included. The data comes from `GET /api/tickets/attention/`, and the rules live in `backend/tickets/attention.py`. Four settings in `backend/.env` (whole hours, validated at startup) control the timing:
+
+| Setting | Default | Meaning |
+|---|---|---|
+| `TICKET_DUE_SOON_HOURS` | 24 | "Due soon" from this age |
+| `TICKET_OVERDUE_HOURS` | 48 | "Overdue" (the target: close within 2 days) |
+| `TICKET_CRITICAL_HOURS` | 72 | "Critical" |
+| `TICKET_NO_ACTIVITY_GRACE_HOURS` | 24 | Added to all three for a ticket with no activities |
+
+They must be positive and increasing (due soon < overdue < critical), or Django refuses to start. Closing a ticket also records `closed_recorded_at` and `closure_lag_minutes` on it, for later reporting; they are read-only in the Django admin.
 
 The API is now available at `http://localhost:8000/api/`. Verify with:
 
@@ -103,7 +117,10 @@ Backend (from `backend/`, with `requirements-dev.txt` installed):
 python manage.py test                              # Django test suite
 python manage.py check
 python manage.py makemigrations --check --dry-run  # fails if a model change has no migration
+ruff check .                                       # lint (config: backend/pyproject.toml)
+ruff format --check .                              # formatting (`ruff format .` applies it)
 mypy .                                             # type check (config: backend/pyproject.toml)
+python manage.py spectacular --validate --fail-on-warn --file schema.yaml  # OpenAPI schema, zero warnings
 ```
 
 Frontend (from `frontend/`):
@@ -121,7 +138,7 @@ Frontend tests sit next to the code they cover (`foo.ts` → `foo.test.ts`); sha
 
 `.github/workflows/ci.yml` runs on every push and pull request, as two parallel jobs; either failing fails the run:
 
-- **Backend** (Python 3.14): `manage.py check`, `makemigrations --check`, `mypy`, then the full Django test suite, against SQLite.
+- **Backend** (Python 3.14): `manage.py check`, `makemigrations --check`, `ruff check`, `ruff format --check`, `mypy`, the OpenAPI schema check (zero warnings), then the full Django test suite, against SQLite.
 - **Frontend** (Node 24): `npm ci`, typecheck, lint, format check, the Vitest suite, then a production `next build`.
 
 Results are on the repository's **Actions** tab, on each pull request's checks, and in the badge at the top of this file.

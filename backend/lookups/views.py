@@ -11,6 +11,7 @@ from collections import Counter
 
 from django.db.models import ProtectedError
 from django.db.models.functions import ExtractDay, ExtractMonth
+from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework import status
 from rest_framework.filters import OrderingFilter, SearchFilter
 from rest_framework.permissions import IsAuthenticated
@@ -29,6 +30,23 @@ from .serializers import (
     SiteSerializer,
     WorkDoneCodeSerializer,
 )
+
+
+def lookup_docs(plural: str, singular: str):
+    """The five operations' summaries for one lookup (the viewset's docstring is the description)."""
+    return extend_schema_view(
+        list=extend_schema(summary=f"List {plural}"),
+        retrieve=extend_schema(summary=f"Get a {singular}"),
+        create=extend_schema(summary=f"Create a {singular} (admin only)"),
+        partial_update=extend_schema(summary=f"Edit a {singular} (admin only)"),
+        destroy=extend_schema(
+            summary=f"Delete a {singular} (admin only)",
+            responses={
+                204: None,
+                409: OpenApiResponse(description=f"The {singular} is still in use; the message says by what."),
+            },
+        ),
+    )
 
 
 def _plural(count: int, model) -> str:
@@ -83,6 +101,7 @@ class LookupViewSet(ModelViewSet):
         return Response(status=status.HTTP_204_NO_CONTENT)
 
 
+@lookup_docs("countries", "country")
 class CountryViewSet(LookupViewSet):
     queryset = Country.objects.all()
     serializer_class = CountrySerializer
@@ -93,6 +112,7 @@ class CountryViewSet(LookupViewSet):
     in_use_hint = "Reassign or delete them first."
 
 
+@lookup_docs("customers", "customer")
 class CustomerViewSet(LookupViewSet):
     queryset = Customer.objects.all()
     serializer_class = CustomerSerializer
@@ -104,6 +124,7 @@ class CustomerViewSet(LookupViewSet):
     in_use_hint = "Move those tickets to another customer first."
 
 
+@lookup_docs("sites", "site")
 class SiteViewSet(LookupViewSet):
     queryset = Site.objects.select_related("country")
     serializer_class = SiteSerializer
@@ -114,6 +135,7 @@ class SiteViewSet(LookupViewSet):
     in_use_hint = "Deactivate it instead."
 
 
+@lookup_docs("work done codes", "work done code")
 class WorkDoneCodeViewSet(LookupViewSet):
     queryset = WorkDoneCode.objects.all()
     serializer_class = WorkDoneCodeSerializer
@@ -124,12 +146,11 @@ class WorkDoneCodeViewSet(LookupViewSet):
     in_use_hint = "Deactivate it instead."
 
 
+@lookup_docs("holidays", "holiday")
 class HolidayViewSet(LookupViewSet):
     # `month`/`day` give calendar order across years, which is what matters
     # for recurring holidays (their stored year is ignored).
-    queryset = Holiday.objects.select_related("country").annotate(
-        month=ExtractMonth("date"), day=ExtractDay("date")
-    )
+    queryset = Holiday.objects.select_related("country").annotate(month=ExtractMonth("date"), day=ExtractDay("date"))
     serializer_class = HolidaySerializer
     search_fields = ["name", "country__name", "country__code"]
     ordering_fields = ["name", "date", "month", "day", "country__name", "is_recurring_annually"]

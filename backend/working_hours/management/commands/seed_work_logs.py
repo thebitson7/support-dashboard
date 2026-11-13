@@ -13,8 +13,8 @@ from decimal import Decimal
 
 from django.db import transaction
 
-from core.management import DevOnlyCommand
 from accounts.models import User
+from core.management import DevOnlyCommand
 from working_hours.models import WorkLogEntry, hours_between
 from working_hours.periods import local_today
 

@@ -238,7 +238,8 @@ export function TicketsTableView({
                   className={cn(
                     "transition-colors duration-150",
                     open
-                      ? "bg-[color-mix(in_oklab,var(--status-open)_18%,transparent)] hover:bg-[color-mix(in_oklab,var(--status-open)_27%,transparent)] dark:bg-[color-mix(in_oklab,var(--status-open)_20%,transparent)] dark:hover:bg-[color-mix(in_oklab,var(--status-open)_28%,transparent)]"
+                      ? // A light wash: the left-edge bar and the Open badge carry the meaning.
+                        "bg-[color-mix(in_oklab,var(--status-open)_6%,transparent)] hover:bg-[color-mix(in_oklab,var(--status-open)_11%,transparent)] dark:bg-[color-mix(in_oklab,var(--status-open)_9%,transparent)] dark:hover:bg-[color-mix(in_oklab,var(--status-open)_14%,transparent)]"
                       : "hover:bg-foreground/5",
                     reveal && "row-enter",
                   )}

@@ -18,6 +18,4 @@ class WorkingHoursConfig(AppConfig):
 
         # Single-activity saves (e.g. the admin's inline editor). The ticket
         # API's bulk writes call working_hours.sync directly instead.
-        post_save.connect(
-            _activity_saved, sender=TicketActivity, dispatch_uid="work_log_from_ticket_activity"
-        )
+        post_save.connect(_activity_saved, sender=TicketActivity, dispatch_uid="work_log_from_ticket_activity")

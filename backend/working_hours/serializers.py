@@ -41,9 +41,7 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     date = serializers.DateField(required=False)
     start_time = serializers.TimeField(format="%H:%M")
     end_time = serializers.TimeField(format="%H:%M")
-    hours = serializers.DecimalField(
-        max_digits=5, decimal_places=2, coerce_to_string=False, read_only=True
-    )
+    hours = serializers.DecimalField(max_digits=5, decimal_places=2, coerce_to_string=False, read_only=True)
     category = serializers.ChoiceField(choices=WorkLogEntry.Category.choices, required=False)
     is_auto = serializers.BooleanField(read_only=True)
     ticket = serializers.SerializerMethodField()
@@ -80,8 +78,7 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     def validate_category(self, value):
         if value == WorkLogEntry.Category.AMS:
             raise serializers.ValidationError(
-                "AMS time is recorded automatically from ticket activities. "
-                "Only Non-AMS work can be logged here."
+                "AMS time is recorded automatically from ticket activities. Only Non-AMS work can be logged here."
             )
         return value
 
@@ -90,7 +87,7 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
         return entry.ticket_activity.ticket_id if entry.ticket_activity_id else None
 
     def get_ticket_reference(self, entry) -> str | None:
-        """"Ticket #… — Troubleshooting", read live from the ticket (auto entries)."""
+        """ "Ticket #… — Troubleshooting", read live from the ticket (auto entries)."""
         return ticket_reference(entry.ticket_activity) if entry.ticket_activity_id else None
 
     def validate(self, attrs):
@@ -128,9 +125,7 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
         # span tops out at 23 h 59 m, so the per-entry cap is a safety net.
         hours = hours_between(start, end)
         if hours > MAX_DAY_HOURS:
-            raise serializers.ValidationError(
-                {"end_time": "A single entry can't be more than 24 hours."}
-            )
+            raise serializers.ValidationError({"end_time": "A single entry can't be more than 24 hours."})
 
         # A day holds at most 24 h across all its entries (a plain sum; no
         # overlap detection).

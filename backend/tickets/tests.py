@@ -85,9 +85,7 @@ class TicketCreateTests(TicketTestCase):
 
         self.assertEqual(response.status_code, 201, response.content)
         ticket = Ticket.objects.get(pk=response.json()["id"])
-        self.assertEqual(
-            list(ticket.activities.values_list("duration_minutes", flat=True)), [90, 45]
-        )
+        self.assertEqual(list(ticket.activities.values_list("duration_minutes", flat=True)), [90, 45])
         # 135 minutes -> 2.25 h, computed server-side.
         self.assertEqual(ticket.total_duration_hours, Decimal("2.25"))
         self.assertEqual(response.json()["total_duration_hours"], 2.25)
@@ -146,15 +144,11 @@ class TicketCreateTests(TicketTestCase):
     def test_invalid_activity_rolls_back_the_whole_ticket(self):
         bad = self.activity(0, 30)
         bad["end_at"] = iso(T0 - timedelta(hours=1))
-        response = self.client.post(
-            TICKETS_URL, self.payload(activities=[self.activity(), bad]), format="json"
-        )
+        response = self.client.post(TICKETS_URL, self.payload(activities=[self.activity(), bad]), format="json")
 
         self.assertEqual(response.status_code, 400)
         # Errors are keyed by the failing activity's index; valid ones are omitted.
-        self.assertEqual(
-            response.json()["activities"], {"1": {"end_at": ["End must be after the start."]}}
-        )
+        self.assertEqual(response.json()["activities"], {"1": {"end_at": ["End must be after the start."]}})
         self.assertFalse(Ticket.objects.exists())
         self.assertFalse(TicketActivity.objects.exists())
 
@@ -169,9 +163,7 @@ class TicketCreateTests(TicketTestCase):
         self.assertIsNone(Ticket.objects.get(pk=cleared.json()["id"]).forwarded_to)
 
     def test_verification_is_all_or_nothing(self):
-        partial = self.client.post(
-            TICKETS_URL, self.payload(cms_closed_on=iso(T0 + timedelta(days=1))), format="json"
-        )
+        partial = self.client.post(TICKETS_URL, self.payload(cms_closed_on=iso(T0 + timedelta(days=1))), format="json")
         self.assertEqual(partial.status_code, 400)
         self.assertEqual(
             set(partial.json()),
@@ -289,9 +281,18 @@ class TicketListTests(TicketTestCase):
         self.assertEqual(
             set(body["results"][0]),
             {
-                "id", "site_name", "site_ocn", "cms_next_ticket_no", "received_at", "status",
-                "is_pre", "cms_closed_by", "created_by", "total_duration_hours",
-                "cms_closed_on", "service_closed_date",
+                "id",
+                "site_name",
+                "site_ocn",
+                "cms_next_ticket_no",
+                "received_at",
+                "status",
+                "is_pre",
+                "cms_closed_by",
+                "created_by",
+                "total_duration_hours",
+                "cms_closed_on",
+                "service_closed_date",
             },
         )
         closed = body["results"][2]
@@ -338,7 +339,9 @@ class TicketListTests(TicketTestCase):
     def test_site_and_date_filters(self):
         self.assertEqual(self.ids(site=self.other_site.pk), [self.mid_open.pk])
         self.assertEqual(
-            self.ids(received_after=iso(T0 - timedelta(days=2, hours=1)), received_before=iso(T0 - timedelta(hours=12))),
+            self.ids(
+                received_after=iso(T0 - timedelta(days=2, hours=1)), received_before=iso(T0 - timedelta(hours=12))
+            ),
             [self.new_open.pk, self.mid_open.pk],
         )
         self.assertEqual(self.client.get(TICKETS_URL, {"received_after": "yesterday"}).status_code, 400)
@@ -358,7 +361,9 @@ class TicketListTests(TicketTestCase):
         self.assertEqual(self.ids(search="makati"), [self.mid_open.pk])  # site name
         self.assertEqual(self.ids(search="07014"), [self.mid_open.pk])  # OCN
         self.assertEqual(self.ids(search="RC000"), [self.new_open.pk])  # CMS ticket no
-        self.assertEqual(self.ids(search="wahida begum"), [self.new_open.pk, self.old_closed.pk])  # assignee / closer full name
+        self.assertEqual(
+            self.ids(search="wahida begum"), [self.new_open.pk, self.old_closed.pk]
+        )  # assignee / closer full name
         self.assertEqual(self.ids(search="closed"), [self.old_closed.pk])  # status
 
     def test_search_and_filters_keep_the_unfiltered_total(self):
@@ -381,9 +386,7 @@ class TypeaheadTests(TicketTestCase):
         self.assertEqual(response.json()["name"], "New Lab")
         self.assertEqual(response.json()["ocn"], "OCN01-801-00")
 
-        duplicate = self.client.post(
-            "/api/tickets/sites/", {"name": "New Lab", "ocn": "OCN01-801-00"}, format="json"
-        )
+        duplicate = self.client.post("/api/tickets/sites/", {"name": "New Lab", "ocn": "OCN01-801-00"}, format="json")
         self.assertEqual(duplicate.status_code, 400)
 
     def test_typeahead_results_are_capped(self):
@@ -519,9 +522,7 @@ class TicketUpdateTests(TicketTestCase):
 
     def test_replacing_activities_adds_edits_and_removes_and_recomputes_the_total(self):
         # Keep the first (edited: 60 -> 45 min), drop the second, add a new 120-min one.
-        response = self.patch(
-            {"activities": [self.activity(0, 45, is_likely_cause=True), self.activity(200, 120)]}
-        )
+        response = self.patch({"activities": [self.activity(0, 45, is_likely_cause=True), self.activity(200, 120)]})
 
         self.assertEqual(response.status_code, 200, response.content)
         self.assertEqual(

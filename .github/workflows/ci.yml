@@ -51,8 +51,17 @@ jobs:
       - name: Migrations match the models
         run: python manage.py makemigrations --check --dry-run
 
+      - name: Lint (ruff)
+        run: ruff check .
+
+      - name: Formatting (ruff)
+        run: ruff format --check .
+
       - name: Type check (mypy)
         run: mypy .
+
+      - name: OpenAPI schema (zero warnings)
+        run: python manage.py spectacular --validate --fail-on-warn --file /tmp/schema.yaml
 
       - name: Tests
         run: python manage.py test

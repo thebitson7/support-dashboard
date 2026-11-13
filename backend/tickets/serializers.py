@@ -2,6 +2,7 @@ from decimal import ROUND_HALF_UP, Decimal
 
 from django.db import transaction
 from django.db.models import Sum
+from django.utils import timezone
 from drf_spectacular.utils import extend_schema_serializer
 from rest_framework import serializers
 
@@ -10,19 +11,10 @@ from accounts.serializers import UserRefSerializer
 from working_hours.sync import sync_ticket
 
 from . import audit
-
-from .models import Customer, Site, Ticket, TicketActivity, WorkDoneCode
+from .attention import ROLE_ORDER, Level, closure_lag_minutes
+from .models import VERIFICATION_FIELDS, Customer, Site, Ticket, TicketActivity, WorkDoneCode
 
 MAX_PDF_BYTES = 10 * 1024 * 1024
-
-# All five together close a ticket; a partial set is rejected (see validate()).
-VERIFICATION_FIELDS = (
-    "resolution_verified_by",
-    "resolution_verified_on",
-    "cms_closed_by",
-    "cms_closed_on",
-    "service_closed_date",
-)
 
 
 def active_user_field(**kwargs):
@@ -117,9 +109,7 @@ class TicketListSerializer(serializers.ModelSerializer):
 class TicketActivityWriteSerializer(serializers.ModelSerializer):
     resolved_by = active_user_field(required=False, allow_null=True)
     # Optional: computed from start/end when omitted; an explicit value wins.
-    duration_minutes = serializers.IntegerField(
-        required=False, allow_null=True, min_value=0, max_value=60 * 24 * 31
-    )
+    duration_minutes = serializers.IntegerField(required=False, allow_null=True, min_value=0, max_value=60 * 24 * 31)
 
     class Meta:
         model = TicketActivity
@@ -137,9 +127,7 @@ class TicketActivityWriteSerializer(serializers.ModelSerializer):
         if attrs["end_at"] < attrs["start_at"]:
             raise serializers.ValidationError({"end_at": "End must be after the start."})
         if attrs.get("duration_minutes") is None:
-            attrs["duration_minutes"] = TicketActivity.minutes_between(
-                attrs["start_at"], attrs["end_at"]
-            )
+            attrs["duration_minutes"] = TicketActivity.minutes_between(attrs["start_at"], attrs["end_at"])
         return attrs
 
 
@@ -239,6 +227,11 @@ class TicketWriteSerializer(serializers.ModelSerializer):
     @transaction.atomic
     def create(self, validated_data):
         activities = validated_data.pop("activities", [])
+        if validated_data.get("cms_closed_on") is not None:
+            # Created already closed (a back-entry): when it was recorded is
+            # known, but its closure lag is meaningless (the work and the
+            # closing happened before it was ever in this app), so it stays NULL.
+            validated_data["closed_recorded_at"] = timezone.now()
         ticket = Ticket.objects.create(**validated_data)
         self._replace_activities(ticket, activities)
         # Mirror resolved activities into their resolvers' work logs.
@@ -271,6 +264,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         # Work logs follow the activities (replaced ones' entries went with
         # them by CASCADE) and the ticket number shown in their reference.
         sync_ticket(instance)
+        self._record_closure(instance, was=before["status"])
         if request := self.context.get("request"):
             new_activities = audit.sent_activities(activities) if activities is not None else None
             audit.log_updated(instance, request, before, old_activities, new_activities)
@@ -281,12 +275,31 @@ class TicketWriteSerializer(serializers.ModelSerializer):
             transaction.on_commit(lambda: storage.delete(old_pdf))
         return instance
 
+    @staticmethod
+    def _record_closure(ticket, was: str) -> None:
+        """
+        Closure timing on a status transition (the same before/after status
+        the audit log's closed / reopened entries use). Open -> closed: the
+        system time it happened, and the minutes since the ticket's clock
+        started, measured after the activities were saved so the ones sent
+        with this edit count. Closed -> open: both cleared. No transition (an
+        edit of a closed or an open ticket): untouched.
+        """
+        if was == ticket.status:
+            return
+        if ticket.status == "closed":
+            now = timezone.now()
+            ticket.closed_recorded_at = now
+            ticket.closure_lag_minutes = closure_lag_minutes(ticket, now)
+        else:
+            ticket.closed_recorded_at = None
+            ticket.closure_lag_minutes = None
+        ticket.save(update_fields=["closed_recorded_at", "closure_lag_minutes", "updated_at"])
+
     def _replace_activities(self, ticket, activities):
         """The sent list becomes the complete set (added, edited and removed at once)."""
         ticket.activities.all().delete()
-        TicketActivity.objects.bulk_create(
-            TicketActivity(ticket=ticket, **activity) for activity in activities
-        )
+        TicketActivity.objects.bulk_create(TicketActivity(ticket=ticket, **activity) for activity in activities)
         if activities:
             self._sync_total(ticket)
         # No activities: the manually entered total stands as saved.
@@ -324,9 +337,7 @@ class TicketActivityReadSerializer(serializers.ModelSerializer):
 
 
 # Every writable field except the two represented differently on read.
-_DETAIL_WRITE_FIELDS = [
-    f for f in TicketWriteSerializer.Meta.fields if f not in ("pdf_attachment", "activities")
-]
+_DETAIL_WRITE_FIELDS = [f for f in TicketWriteSerializer.Meta.fields if f not in ("pdf_attachment", "activities")]
 
 
 class TicketDetailSerializer(serializers.ModelSerializer):
@@ -363,3 +374,82 @@ class TicketDetailSerializer(serializers.ModelSerializer):
     def get_pdf_attachment_name(self, ticket) -> str | None:
         name = ticket.pdf_attachment.name
         return name.rsplit("/", 1)[-1] if name else None
+
+
+# --- Tickets waiting to be closed (GET /api/tickets/attention/) ------------------------
+# Output only: they document the response and format its values (ISO date-times).
+
+# Named once in the schema (ENUM_NAME_OVERRIDES): AttentionRoleEnum, AttentionLevelEnum.
+ATTENTION_ROLES = list(ROLE_ORDER)
+ATTENTION_LEVELS = Level.choices
+
+
+class AttentionThresholdsSerializer(serializers.Serializer):
+    due_soon_hours = serializers.IntegerField()
+    overdue_hours = serializers.IntegerField()
+    critical_hours = serializers.IntegerField()
+    no_activity_grace_hours = serializers.IntegerField(
+        help_text="Added to every threshold for a ticket with no activities (its clock starts at received_at)."
+    )
+
+
+class AttentionCountsSerializer(serializers.Serializer):
+    due_soon = serializers.IntegerField()
+    overdue = serializers.IntegerField()
+    critical = serializers.IntegerField()
+
+
+class AttentionPersonRefSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+
+class AttentionInvolvedSerializer(AttentionPersonRefSerializer):
+    roles = serializers.ListField(child=serializers.ChoiceField(choices=ATTENTION_ROLES))
+
+
+class AttentionTicketSerializer(serializers.Serializer):
+    id = serializers.IntegerField()
+    cms_next_ticket_no = serializers.CharField()
+    site_name = serializers.CharField()
+    site_ocn = serializers.CharField()
+    customer_name = serializers.CharField()
+    level = serializers.ChoiceField(choices=ATTENTION_LEVELS)
+    age_hours = serializers.FloatField(help_text="Calendar hours since the clock started, one decimal.")
+    basis = serializers.ChoiceField(
+        choices=["last_activity", "received"],
+        help_text="last_activity: the end of the latest activity (by anyone); received: no activities yet.",
+    )
+    clock_started_at = serializers.DateTimeField()
+    involved = AttentionInvolvedSerializer(many=True, help_text="Active people named on the ticket.")
+    your_roles = serializers.ListField(
+        child=serializers.ChoiceField(choices=ATTENTION_ROLES),
+        help_text="The requester's own roles on it (may be empty for admins).",
+    )
+
+
+class AttentionPersonSerializer(serializers.Serializer):
+    user = AttentionPersonRefSerializer()
+    counts = AttentionCountsSerializer()
+    ticket_ids = serializers.ListField(child=serializers.IntegerField())
+
+
+class AttentionResponseSerializer(serializers.Serializer):
+    generated_at = serializers.DateTimeField()
+    thresholds = AttentionThresholdsSerializer()
+    scope = serializers.ChoiceField(choices=["mine", "all"])
+    counts = AttentionCountsSerializer(help_text="Every ticket in the viewer's scope, not only the listed ones.")
+    total = serializers.IntegerField()
+    truncated = serializers.BooleanField(help_text="True when `results` was cut at 200.")
+    results = AttentionTicketSerializer(many=True)
+    people = AttentionPersonSerializer(
+        many=True,
+        required=False,
+        help_text="Admins only (absent for staff): one row per person; a ticket counts for everyone named on it.",
+    )
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if "people" not in instance:
+            data.pop("people", None)  # absent, not null, for staff
+        return data

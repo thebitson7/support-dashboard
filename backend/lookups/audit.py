@@ -21,7 +21,7 @@ NAMING = {
 
 
 def lookup_label(instance) -> str:
-    """"Site: Tan Tock Seng Hospital (OCN05529-801-00)"."""
+    """ "Site: Tan Tock Seng Hospital (OCN05529-801-00)"."""
     noun, name = NAMING[type(instance)]
     return f"{noun[0].upper()}{noun[1:]}: {name(instance)}"
 
@@ -43,9 +43,7 @@ def log_lookup(action, instance, request, *, changes: dict | None = None, pk=Non
     verb = {A.LOOKUP_CREATED: "added", A.LOOKUP_UPDATED: "edited", A.LOOKUP_DELETED: "deleted"}[action]
     detail = ""
     if changes:
-        detail = ": " + text.listing(
-            [str(type(instance)._meta.get_field(f).verbose_name) for f in changes]
-        )
+        detail = ": " + text.listing([str(type(instance)._meta.get_field(f).verbose_name) for f in changes])
     log_action(
         actor,
         action,

@@ -1,11 +1,9 @@
 import json
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from django.db.models import Case, F, Q, Value, When
 from django.db.models.functions import Concat
 from django.http import FileResponse, QueryDict
 from django.utils import timezone
-from django.utils.dateparse import parse_datetime
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, extend_schema_view
 from rest_framework.exceptions import NotFound, ValidationError
@@ -20,10 +18,13 @@ from accounts.permissions import IsAdminRoleOrReadOnly
 from accounts.throttling import ExportRateThrottle
 from audit.models import AuditLogEntry
 from core.exports import csv_response, text_cell
+from core.params import positive_id, query_instant, query_timezone
 from lookups.audit import log_lookup
 
+from .attention import attention_tickets
 from .models import Customer, Site, Ticket, WorkDoneCode
 from .serializers import (
+    AttentionResponseSerializer,
     CustomerSerializer,
     SiteSerializer,
     TicketDetailSerializer,
@@ -39,8 +40,6 @@ from .serializers import (
 # the Lookups rule (anyone reads, only admins create).
 
 TYPEAHEAD_LIMIT = 20
-# Largest id the database integer column can hold.
-MAX_ID = 2**63 - 1
 
 
 class TicketPagination(PageNumberPagination):
@@ -93,22 +92,8 @@ def parse_ordering(raw: str) -> list:
         raise ValidationError({"ordering": f"Unknown ordering “{raw}”."})
     descending = raw.startswith("-")
     return [
-        F(field).desc(nulls_last=True) if descending else F(field).asc(nulls_last=True)
-        for field in ORDERINGS[key]
+        F(field).desc(nulls_last=True) if descending else F(field).asc(nulls_last=True) for field in ORDERINGS[key]
     ] + [F("id").desc()]  # stable tiebreaker, so pages never overlap
-
-
-def parse_instant(params, name: str):
-    raw = params.get(name)
-    if not raw:
-        return None
-    try:
-        value = parse_datetime(raw)
-    except ValueError:  # well-formed but impossible, e.g. 30 February
-        value = None
-    if value is None or value.tzinfo is None:
-        raise ValidationError({name: "Use an ISO 8601 date-time with a UTC offset."})
-    return value
 
 
 def filtered_tickets(params):
@@ -118,9 +103,7 @@ def filtered_tickets(params):
     can never disagree.
     """
     qs = Ticket.objects.select_related("site", "cms_closed_by", "created_by").annotate(
-        status_label=Case(
-            When(cms_closed_on__isnull=False, then=Value("closed")), default=Value("open")
-        )
+        status_label=Case(When(cms_closed_on__isnull=False, then=Value("closed")), default=Value("open"))
     )
 
     status = params.get("status")
@@ -132,12 +115,10 @@ def filtered_tickets(params):
     site = params.get("site")
     if site:
         # Range-checked too: ids past the database integer size are a 400, not a 500.
-        if not (site.isascii() and site.isdigit()) or not 0 < int(site) <= MAX_ID:
-            raise ValidationError({"site": "Must be a site id."})
-        qs = qs.filter(site_id=int(site))
+        qs = qs.filter(site_id=positive_id(site, "site", "Must be a site id."))
 
-    after = parse_instant(params, "received_after")
-    before = parse_instant(params, "received_before")
+    after = query_instant(params, "received_after")
+    before = query_instant(params, "received_before")
     if after:
         qs = qs.filter(received_at__gte=after)
     if before:
@@ -178,12 +159,8 @@ TICKET_FILTERS = [
     ),
     OpenApiParameter("status", str, enum=["open", "closed"], description="Derived from `cms_closed_on`."),
     OpenApiParameter("site", int, description="A site id."),
-    OpenApiParameter(
-        "received_after", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."
-    ),
-    OpenApiParameter(
-        "received_before", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."
-    ),
+    OpenApiParameter("received_after", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."),
+    OpenApiParameter("received_before", OpenApiTypes.DATETIME, description="Inclusive; ISO 8601 with a UTC offset."),
     OpenApiParameter(
         "ordering",
         str,
@@ -315,14 +292,8 @@ class TicketExportView(APIView):
     throttle_classes = [ExportRateThrottle]
 
     def get(self, request):
-        requested = request.query_params.get("tz")
-        if requested:
-            try:
-                tz = ZoneInfo(requested)
-            except (ZoneInfoNotFoundError, ValueError):
-                raise ValidationError({"tz": "Use an IANA time zone name, e.g. Asia/Kuala_Lumpur."})
-        else:
-            tz = request.user.tzinfo  # falls back safely if the profile's zone is bad
+        # Default: the profile zone (falls back safely if that's somehow bad).
+        tz = query_timezone(request.query_params, default=request.user.tzinfo)
         zone = tz.key
 
         def when(value):
@@ -439,19 +410,46 @@ class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):
 
     def update(self, request, *args, **kwargs):
         ticket = self.get_object()
-        serializer = self.get_serializer(
-            ticket, data=self.write_payload(request), partial=kwargs.get("partial", False)
-        )
+        serializer = self.get_serializer(ticket, data=self.write_payload(request), partial=kwargs.get("partial", False))
         serializer.is_valid(raise_exception=True)
         serializer.save()
         # Re-read so the response reflects the replaced activities.
         return Response(TicketDetailSerializer(self.get_object()).data)
 
 
+@extend_schema(
+    summary="Tickets waiting to be closed",
+    description=(
+        "Open tickets that have sat too long since their last activity ended (or, with no "
+        "activities, since they were received, with every threshold shifted by the grace "
+        "period). Levels by calendar hours, boundaries inclusive: due_soon, overdue, "
+        "critical; the thresholds in force are returned. Staff get only tickets they are "
+        "named on (creator, assignee, forward recipient, CMS adder or an activity's "
+        "resolver; `scope` = mine). Admins get every ticket plus `people`, a per-person "
+        "grouping in which a ticket counts for everyone named on it (`scope` = all). "
+        "`results` is capped at 200 (most severe, then oldest, first); `total` and "
+        "`counts` always cover everything. Never cached (`Cache-Control: no-store`)."
+    ),
+    request=None,
+    responses=AttentionResponseSerializer,
+)
+class TicketAttentionView(APIView):
+    """GET: the signed-in user's tickets waiting to be closed (see tickets/attention.py)."""
+
+    def get(self, request):
+        data = attention_tickets(request.user, timezone.now())
+        response = Response(AttentionResponseSerializer(data).data)
+        response["Cache-Control"] = "no-store"
+        return response
+
+
 TYPEAHEAD_QUERY = OpenApiParameter("q", str, description="Search text; omit for the first 20.")
 
 
-@extend_schema_view(get=extend_schema(parameters=[TYPEAHEAD_QUERY]))
+@extend_schema_view(
+    get=extend_schema(summary="Search active sites (ticket form)", parameters=[TYPEAHEAD_QUERY]),
+    post=extend_schema(summary="Quick-add a site (admin only)"),
+)
 class SiteListCreateView(ListCreateAPIView):
     """
     The ticket form's site field. GET ?q= typeahead over *active* sites (name
@@ -475,7 +473,10 @@ class SiteListCreateView(ListCreateAPIView):
         log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
 
 
-@extend_schema_view(get=extend_schema(parameters=[TYPEAHEAD_QUERY]))
+@extend_schema_view(
+    get=extend_schema(summary="Search customers (ticket form)", parameters=[TYPEAHEAD_QUERY]),
+    post=extend_schema(summary="Quick-add a customer (admin only)"),
+)
 class CustomerListCreateView(ListCreateAPIView):
     """
     The ticket form's customer field. GET ?q= typeahead by name (max 20), for
@@ -498,6 +499,7 @@ class CustomerListCreateView(ListCreateAPIView):
         log_lookup(AuditLogEntry.Action.LOOKUP_CREATED, serializer.save(), self.request)
 
 
+@extend_schema_view(get=extend_schema(summary="List work done codes (ticket form)"))
 class WorkDoneCodeListView(ListAPIView):
     """
     Every work-done code, with `is_active`: the ticket form offers only active

@@ -10,7 +10,7 @@ import { formatDateDisplay } from "@/lib/local-datetime";
 import { formatTimeRange, spanMinutes, userQuery, WORK_CATEGORIES } from "@/lib/working-hours";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import { Field, RequiredMark, describedBy, errorId, fieldId } from "@/components/common/form-field";
-import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
+import { formatDuration } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
@@ -113,7 +113,7 @@ export function LogHoursDialog({
   const touch = (name: FieldName) => setTouched((t) => (t[name] ? t : { ...t, [name]: true }));
 
   const forSomeoneElse = Boolean(subjectName);
-  const title = `${entry ? "Edit Entry" : "Log Hours"}${forSomeoneElse ? ` for ${subjectName}` : ""}`;
+  const title = `${entry ? "Edit entry" : "Log hours"}${forSomeoneElse ? ` for ${subjectName}` : ""}`;
   const description = forSomeoneElse
     ? `This changes ${subjectName}'s working hours, not yours.`
     : entry
@@ -151,7 +151,7 @@ export function LogHoursDialog({
         (c) => c.value === (entry?.category ?? "non_ams"),
       )?.label;
       toast.success(entry ? "Entry updated" : "Hours logged", {
-        description: `${formatMinutes(minutes ?? 0)} ${category} · ${formatTimeRange(values)} on ${formatDateDisplay(values.date)}${
+        description: `${formatDuration(minutes ?? 0)} ${category} · ${formatTimeRange(values)} on ${formatDateDisplay(values.date)}${
           forSomeoneElse ? ` for ${subjectName}` : ""
         }`,
       });
@@ -288,7 +288,7 @@ export function LogHoursDialog({
                   <span>
                     Duration:{" "}
                     <strong className="font-semibold text-foreground tabular-nums">
-                      {formatMinutes(minutes)}
+                      {formatDuration(minutes)}
                     </strong>
                   </span>
                 ) : (
@@ -333,7 +333,7 @@ export function LogHoursDialog({
                 {submitting && (
                   <LoaderCircle className="animate-spin motion-reduce:animate-none" aria-hidden />
                 )}
-                {submitting ? "Saving…" : entry ? "Save Changes" : "Log Hours"}
+                {submitting ? "Saving…" : entry ? "Save changes" : "Log hours"}
               </Button>
             </div>
           </footer>

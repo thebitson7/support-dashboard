@@ -60,7 +60,12 @@ class RedisDownTests(APITestCase):
         self.client.force_authenticate(self.admin)
         with self.assertLogs("accounts.throttling", "ERROR"):
             self.assertEqual(self.client.get("/api/audit/logs/export/").status_code, 503)
-            self.assertEqual(self.client.patch(f"/api/accounts/admin/users/{self.admin.pk}/", {"first_name": "B"}, format="json").status_code, 503)
+            self.assertEqual(
+                self.client.patch(
+                    f"/api/accounts/admin/users/{self.admin.pk}/", {"first_name": "B"}, format="json"
+                ).status_code,
+                503,
+            )
 
     def test_endpoints_without_a_rate_limit_are_unaffected(self):
         self.client.force_authenticate(self.admin)

@@ -2,14 +2,7 @@
 
 import { Suspense, useId, useState } from "react";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import {
-  ChevronLeft,
-  ChevronRight,
-  LoaderCircle,
-  Plus,
-  TriangleAlert,
-  UserRound,
-} from "lucide-react";
+import { ChevronLeft, ChevronRight, LoaderCircle, TriangleAlert, UserRound } from "lucide-react";
 import { toast } from "sonner";
 
 import type { AdminUser } from "@/types/administration";
@@ -25,12 +18,12 @@ import {
 } from "@/lib/local-datetime";
 import { WORK_CATEGORIES, entryMinutes, formatTimeRange } from "@/lib/working-hours";
 import { useApiGet } from "@/hooks/use-api";
-import { Breadcrumb } from "@/components/layout/breadcrumb";
+import { PageHeader, PrimaryAction } from "@/components/layout/page-header";
 import { DateTimePicker } from "@/components/common/date-time-picker";
 import { StatePlaceholder } from "@/components/common/state-placeholder";
 import { DayEntries } from "@/components/job-sheets/day-entries";
 import { DaySummary } from "@/components/job-sheets/day-summary";
-import { formatMinutes } from "@/components/tickets/ticket-form/form-model";
+import { formatDuration } from "@/lib/format";
 import { LogHoursDialog } from "@/components/working-hours/log-hours-dialog";
 import { UserPicker } from "@/components/working-hours/user-picker";
 import { Button } from "@/components/ui/button";
@@ -42,7 +35,6 @@ import {
   AlertDialogDescription,
   AlertDialogTitle,
 } from "@/components/ui/dialog";
-import { Toaster } from "@/components/ui/sonner";
 
 type DeleteState = { entry: WorkLogEntry; pending: boolean; error: string | null };
 
@@ -151,7 +143,7 @@ function JobSheet({
   const canLog = enabled && !entries.error && !deactivated;
 
   const entryLabel = (entry: WorkLogEntry) =>
-    `${formatMinutes(entryMinutes(entry))} ${
+    `${formatDuration(entryMinutes(entry))} ${
       WORK_CATEGORIES.find((c) => c.value === entry.category)?.label
     } (${formatTimeRange(entry)}) on ${formatDateDisplay(entry.date)}`;
 
@@ -190,34 +182,23 @@ function JobSheet({
 
   return (
     <div className="mx-auto flex w-full max-w-6xl flex-col gap-5">
-      <header className="grid gap-3">
-        <Breadcrumb items={[{ label: "Job Sheets" }]} />
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="text-2xl font-extrabold tracking-tight">Job Sheet</h1>
-            <p className="text-label">
-              {who
-                ? `${isAdmin ? `${who} · ` : ""}${formatDateLong(date)}`
-                : "Pick a team member to see their day"}
-            </p>
-          </div>
-          <div className="flex flex-wrap items-center gap-3">
+      <PageHeader
+        trail={[{ label: "Job Sheets" }]}
+        title="Job Sheets"
+        description={
+          who
+            ? `${isAdmin ? `${who} · ` : ""}${formatDateLong(date)}`
+            : "Pick a team member to see their day"
+        }
+        actions={
+          <>
             {isAdmin && (
               <UserPicker users={users.data} value={userId} onChange={(id) => onUserChange(id)} />
             )}
-            {canLog && (
-              <Button
-                size="lg"
-                onClick={() => openLog(null)}
-                className="h-10 gap-2 rounded-full px-5 font-semibold shadow-elev-1 transition-shadow duration-200 hover:bg-primary hover:shadow-elev-hover"
-              >
-                <Plus className="size-4.5" strokeWidth={2.5} aria-hidden />
-                Log Hours
-              </Button>
-            )}
-          </div>
-        </div>
-      </header>
+            {canLog && <PrimaryAction onClick={() => openLog(null)}>Log hours</PrimaryAction>}
+          </>
+        }
+      />
 
       <div role="group" aria-label="Choose the day" className="flex flex-wrap items-center gap-2">
         <Button
@@ -346,8 +327,6 @@ function JobSheet({
           )}
         </AlertDialogContent>
       </AlertDialog>
-
-      <Toaster />
     </div>
   );
 }

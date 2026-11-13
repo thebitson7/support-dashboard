@@ -47,28 +47,4 @@ export function CountryCell({
   );
 }
 
-/** Active / Inactive pill (same shape as the ticket status badge). */
-export function ActiveBadge({ active }: { active: boolean }) {
-  return (
-    <span
-      className="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-xs font-semibold"
-      style={
-        active
-          ? {
-              color: "color-mix(in oklab, var(--chart-success), var(--foreground) 45%)",
-              backgroundColor: "color-mix(in oklab, var(--chart-success) 14%, transparent)",
-            }
-          : undefined
-      }
-    >
-      <span
-        aria-hidden
-        className="size-1.5 rounded-full"
-        style={{ backgroundColor: active ? "var(--chart-success)" : "var(--muted-foreground)" }}
-      />
-      <span className={active ? undefined : "text-muted-foreground"}>
-        {active ? "Active" : "Inactive"}
-      </span>
-    </span>
-  );
-}
+export { ActiveBadge } from "@/components/common/tone-badge";

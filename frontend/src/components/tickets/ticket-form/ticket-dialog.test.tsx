@@ -76,7 +76,7 @@ describe("ticket form tab indicators", () => {
   it("flags nothing on a complete, valid closed ticket", async () => {
     serve(closedTicket());
     renderDialog(17);
-    await screen.findByRole("button", { name: "Save Changes" });
+    await screen.findByRole("button", { name: "Save changes" });
     expect(flaggedTabs()).toEqual({
       Ticket: false,
       Activities: false,
@@ -98,7 +98,7 @@ describe("ticket form tab indicators", () => {
       }),
     );
     renderDialog(17);
-    await screen.findByRole("button", { name: "Save Changes" });
+    await screen.findByRole("button", { name: "Save changes" });
     expect(flaggedTabs()).toEqual({
       Ticket: false,
       Activities: false,
@@ -117,7 +117,7 @@ describe("ticket form tab indicators", () => {
       }),
     );
     const user = renderDialog(17);
-    await user.click(await screen.findByRole("button", { name: "Save Changes" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(flaggedTabs()).toEqual({
@@ -141,7 +141,7 @@ describe("ticket form tab indicators", () => {
       }),
     );
     const user = renderDialog(17);
-    await user.click(await screen.findByRole("button", { name: "Save Changes" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
 
     await waitFor(() =>
       expect(flaggedTabs()).toEqual({
@@ -159,7 +159,7 @@ describe("ticket form tab indicators", () => {
       }),
     );
     const user = renderDialog(17);
-    await user.click(await screen.findByRole("button", { name: "Save Changes" }));
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
 
     expect(apiPatch).not.toHaveBeenCalled();
     expect(screen.getByRole("tab", { name: /Ticket Verification/ })).toHaveAttribute(
@@ -167,5 +167,49 @@ describe("ticket form tab indicators", () => {
       "true",
     );
     expect(flaggedTabs()["Ticket Verification"]).toBe(true);
+  });
+});
+
+describe("initial tab (the attention alert's deep link)", () => {
+  it("opens an edit on the Verification tab when asked", async () => {
+    serve(closedTicket());
+    render(
+      <TicketDialog
+        open
+        onOpenChange={vi.fn()}
+        ticketId={17}
+        initialTab="verification"
+        onSaved={vi.fn()}
+      />,
+    );
+    await screen.findByRole("button", { name: "Save changes" });
+    expect(screen.getByRole("tab", { name: /Ticket Verification/ })).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  });
+
+  it("still opens on the Ticket tab by default", async () => {
+    serve(closedTicket());
+    renderDialog(17);
+    await screen.findByRole("button", { name: "Save changes" });
+    expect(screen.getByRole("tab", { name: /^Ticket$/ })).toHaveAttribute("aria-selected", "true");
+  });
+
+  it("reports a ticket that can't be loaded to onLoadError", async () => {
+    serve();
+    const onLoadError = vi.fn();
+    render(
+      <TicketDialog
+        open
+        onOpenChange={vi.fn()}
+        ticketId={999}
+        onSaved={vi.fn()}
+        onLoadError={onLoadError}
+      />,
+    );
+    await waitFor(() =>
+      expect(onLoadError).toHaveBeenCalledWith(expect.objectContaining({ status: 404 })),
+    );
   });
 });
