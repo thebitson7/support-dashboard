@@ -19,7 +19,7 @@ from core.params import positive_id, query_day
 from tickets.models import ticket_label
 
 from .models import WorkLogEntry
-from .openapi import WorkingHoursSummary
+from .openapi import OVERLAP_CONFLICT, WorkingHoursSummary
 from .periods import local_today, summarize
 from .serializers import WorkLogEntrySerializer
 from .totals import entry_minutes
@@ -109,7 +109,11 @@ class SummaryView(APIView):
             OpenApiParameter("date", OpenApiTypes.DATE, description="Default: the viewer's today."),
         ],
     ),
-    post=extend_schema(summary="Log hours", parameters=[USER_ID]),
+    post=extend_schema(
+        summary="Log hours",
+        parameters=[USER_ID],
+        responses={201: WorkLogEntrySerializer, 409: OVERLAP_CONFLICT},
+    ),
 )
 class EntryListCreateView(ListCreateAPIView):
     """
@@ -151,7 +155,9 @@ class EntryListCreateView(ListCreateAPIView):
 
     def perform_create(self, serializer):
         entry = serializer.save(user=self.target)
-        log_work_entry(AuditLogEntry.Action.WORK_LOG_CREATED, entry, self.request)
+        log_work_entry(
+            AuditLogEntry.Action.WORK_LOG_CREATED, entry, self.request, overlaps=serializer.confirmed_overlaps
+        )
 
 
 class AutoEntryLocked(APIException):
@@ -160,13 +166,21 @@ class AutoEntryLocked(APIException):
 
 
 AUTO_ENTRY_CONFLICT = {409: OpenApiResponse(description="An auto entry (from a ticket activity): edit the ticket.")}
+# PATCH answers 409 for either reason; the body tells them apart (`code`).
+EDIT_CONFLICT = {
+    409: OpenApiResponse(
+        response=OVERLAP_CONFLICT.response,
+        description=(
+            "An auto entry (from a ticket activity; body: `detail` only): edit the ticket. Or: "
+            + str(OVERLAP_CONFLICT.description)
+        ),
+    )
+}
 
 
 @extend_schema_view(
     get=extend_schema(summary="Get a work-log entry"),
-    patch=extend_schema(
-        summary="Edit a work-log entry", responses={200: WorkLogEntrySerializer, **AUTO_ENTRY_CONFLICT}
-    ),
+    patch=extend_schema(summary="Edit a work-log entry", responses={200: WorkLogEntrySerializer, **EDIT_CONFLICT}),
     delete=extend_schema(summary="Delete a work-log entry", responses={204: None, **AUTO_ENTRY_CONFLICT}),
 )
 class EntryDetailView(RetrieveUpdateDestroyAPIView):
@@ -211,7 +225,13 @@ class EntryDetailView(RetrieveUpdateDestroyAPIView):
     def perform_update(self, serializer):
         before = work_entry_phrase(serializer.instance)
         entry = serializer.save()
-        log_work_entry(AuditLogEntry.Action.WORK_LOG_UPDATED, entry, self.request, before=before)
+        log_work_entry(
+            AuditLogEntry.Action.WORK_LOG_UPDATED,
+            entry,
+            self.request,
+            before=before,
+            overlaps=serializer.confirmed_overlaps,
+        )
 
     def perform_destroy(self, instance):
         phrase, label, pk = work_entry_phrase(instance), work_entry_label(instance), instance.pk
@@ -234,7 +254,7 @@ def work_entry_label(entry) -> str:
     return f"Work log: {person(entry.user)} · {text.day(entry.date)}"
 
 
-def log_work_entry(action, entry, request, *, before=None, phrase=None, label=None, pk=None) -> None:
+def log_work_entry(action, entry, request, *, before=None, phrase=None, label=None, pk=None, overlaps: int = 0) -> None:
     actor = request.user
     owner = entry.user
     for_whom = "" if owner.pk == actor.pk else f" for {person(owner)}"
@@ -247,6 +267,10 @@ def log_work_entry(action, entry, request, *, before=None, phrase=None, label=No
     metadata = {"user": owner.username, "date": entry.date.isoformat(), "minutes": entry_minutes(entry)}
     if before is not None:
         metadata["before"] = before
+    if overlaps:
+        # Saved with confirm_overlaps: it overlaps other time the owner logged.
+        metadata["overlap_confirmed"] = True
+        metadata["overlap_count"] = overlaps
     log_action(
         actor,
         action,

@@ -2,12 +2,22 @@
 
 import { useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
-import { CircleAlert, ClipboardList, Pencil, Plus, RotateCw, Trash2 } from "lucide-react";
+import {
+  CircleAlert,
+  ClipboardList,
+  Pencil,
+  Plus,
+  RotateCw,
+  Trash2,
+  TriangleAlert,
+} from "lucide-react";
 import { cn } from "cn";
 
 import type { ApiWorkDoneCode } from "@/lib/tickets-api";
 import { searchUsers } from "@/lib/tickets-api";
 import { EASE } from "@/lib/motion";
+import { localToMs } from "@/lib/local-datetime";
+import { sameFormOverlaps, sameFormWarning } from "@/lib/overlaps";
 import { SearchCombobox } from "@/components/common/search-combobox";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
@@ -248,6 +258,16 @@ export function ActivitiesTab({
     return code ? `${code.code} · ${code.description}` : "—";
   };
   const editingActivity = activities.find((a) => a.key === editing);
+  // Early, non-blocking warning: rows with the same resolver whose times
+  // overlap. Other tickets and logged hours are checked by the server on save.
+  const overlapping = sameFormOverlaps(
+    activities.map((a) => ({
+      key: a.key,
+      startMs: localToMs(a.start_at),
+      endMs: localToMs(a.end_at),
+      personId: a.resolved_by?.value ?? null,
+    })),
+  );
 
   const save = (draft: Draft) => {
     onChange(
@@ -341,6 +361,7 @@ export function ActivitiesTab({
               {activities.map((a, index) => {
                 const minutes = minutesBetween(a.start_at, a.end_at) ?? 0;
                 const errs = serverErrors[a.key];
+                const overlapsWith = overlapping[a.key];
                 const label = `${labelOf(ACTIVITY_TYPES, a.activity_type)} activity ${index + 1}`;
                 return (
                   <tr key={a.key} className={cn(errs && "bg-destructive/5")}>
@@ -352,6 +373,12 @@ export function ActivitiesTab({
                         />
                       )}
                       {labelOf(ACTIVITY_TYPES, a.activity_type)}
+                      {overlapsWith && (
+                        <span className="mt-0.5 flex items-center gap-1 text-xs font-medium text-muted-foreground">
+                          <TriangleAlert className="size-3.5 shrink-0" aria-hidden />
+                          {sameFormWarning(overlapsWith)}
+                        </span>
+                      )}
                     </td>
                     <td className="border-b border-border/60 px-3 py-2 whitespace-nowrap tabular-nums">
                       {fmtDate(a.start_at)}

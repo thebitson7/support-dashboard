@@ -247,7 +247,20 @@ class TeamActivityExportTests(ReportTestCase):
         )
         header, rows = read_csv(response)
         self.assertEqual(
-            header, ["User", "Date", "Start Time", "End Time", "Category", "Hours", "Minutes", "Source", "Note"]
+            header,
+            [
+                "User",
+                "Date",
+                "Start Time",
+                "End Time",
+                "Category",
+                "Hours",
+                "Minutes",
+                "Source",
+                "Note",
+                # Appended last, so readers by position are unaffected.
+                "Overlap Minutes",
+            ],
         )
         self.assertEqual(
             rows,
@@ -262,10 +275,33 @@ class TeamActivityExportTests(ReportTestCase):
                     "120",
                     "Ticket #152172RA2778834 — Troubleshooting",
                     "",
+                    "0",
                 ],
                 # A note that looks like a formula is kept as text.
-                ["Alice Tan", "2026-03-03", "16:00", "16:45", "Non-AMS", "0.75", "45", "Manual", '\'=HYPERLINK("x")'],
-                ["Bob Lim", "2026-03-04", "09:00", "17:00", "Non-AMS", "8.00", "480", "Manual", "Site visit, Penang"],
+                [
+                    "Alice Tan",
+                    "2026-03-03",
+                    "16:00",
+                    "16:45",
+                    "Non-AMS",
+                    "0.75",
+                    "45",
+                    "Manual",
+                    '\'=HYPERLINK("x")',
+                    "0",
+                ],
+                [
+                    "Bob Lim",
+                    "2026-03-04",
+                    "09:00",
+                    "17:00",
+                    "Non-AMS",
+                    "8.00",
+                    "480",
+                    "Manual",
+                    "Site visit, Penang",
+                    "0",
+                ],
             ],
         )
 

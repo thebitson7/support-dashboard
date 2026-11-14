@@ -20,6 +20,7 @@ from audit.models import AuditLogEntry
 from core.exports import csv_response, text_cell
 from core.params import positive_id, query_instant, query_timezone
 from lookups.audit import log_lookup
+from working_hours.openapi import OVERLAP_CONFLICT
 
 from .attention import attention_tickets
 from .models import Customer, Site, Ticket, WorkDoneCode
@@ -231,7 +232,7 @@ class TicketWriteMixin(APIView):
         summary="Create a ticket",
         description="Validation as documented on the write shape." + MULTIPART_NOTE,
         request=TicketWriteSerializer,
-        responses={201: TicketListSerializer},
+        responses={201: TicketListSerializer, 409: OVERLAP_CONFLICT},
     ),
 )
 class TicketListCreateView(TicketWriteMixin, ListCreateAPIView):
@@ -373,7 +374,7 @@ class TicketAttachmentView(APIView):
         summary="Replace a ticket",
         description="Every field, as for creation." + MULTIPART_NOTE,
         request=TicketWriteSerializer,
-        responses=TicketDetailSerializer,
+        responses={200: TicketDetailSerializer, 409: OVERLAP_CONFLICT},
     ),
     patch=extend_schema(
         summary="Edit a ticket",
@@ -382,7 +383,7 @@ class TicketAttachmentView(APIView):
             "clearing all five verification fields reopens a closed ticket." + MULTIPART_NOTE
         ),
         request=TicketWriteSerializer,
-        responses=TicketDetailSerializer,
+        responses={200: TicketDetailSerializer, 409: OVERLAP_CONFLICT},
     ),
 )
 class TicketDetailView(TicketWriteMixin, RetrieveUpdateAPIView):

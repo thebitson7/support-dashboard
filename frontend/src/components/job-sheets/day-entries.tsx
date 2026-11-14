@@ -1,6 +1,6 @@
 "use client";
 
-import { ClipboardList, Lock, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
+import { ClipboardList, Layers, Lock, Pencil, Plus, Ticket, Trash2 } from "lucide-react";
 
 import type { WorkLogEntry } from "@/types/working-hours";
 import type { ApiError } from "@/lib/api";
@@ -13,6 +13,7 @@ import {
 import { LoadErrorPlaceholder } from "@/components/common/state-placeholder";
 import { ToneBadge } from "@/components/common/tone-badge";
 import { formatDuration } from "@/lib/format";
+import { formatOverlapDuration } from "@/lib/overlaps";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -51,6 +52,33 @@ export function FromTicketBadge({ reference }: { reference: string }) {
       <TooltipContent side="left" className="max-w-64">
         Recorded automatically from this ticket activity. To change it, edit the activity on the
         ticket.
+      </TooltipContent>
+    </Tooltip>
+  );
+}
+
+/**
+ * A confirmed overlap, kept visible: a word, an icon and a tooltip with the
+ * minutes (never colour alone). A real button so it's focusable and its full
+ * meaning is announced.
+ */
+export function OverlapBadge({ minutes }: { minutes: number }) {
+  const amount = formatOverlapDuration(minutes);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        type="button"
+        className="inline-flex shrink-0 cursor-default rounded-full outline-none focus-visible:ring-3 focus-visible:ring-ring/50"
+        aria-label={`Overlaps other time: ${amount} of this entry overlaps other work logged that day, and is counted twice in the hours.`}
+      >
+        <ToneBadge tone="var(--attention-soon)">
+          <Layers className="size-3" aria-hidden />
+          Overlaps other time
+        </ToneBadge>
+      </TooltipTrigger>
+      <TooltipContent side="top" className="max-w-64">
+        {amount} of this entry overlaps other work logged that day. It&apos;s counted twice in the
+        hours.
       </TooltipContent>
     </Tooltip>
   );
@@ -140,6 +168,7 @@ export function DayEntries({
                   <span className="sr-only">, </span>
                   <span className="font-semibold">{formatDuration(entryMinutes(entry))}</span>
                 </span>
+                {entry.overlaps_with_other_time && <OverlapBadge minutes={entry.overlap_minutes} />}
                 {entry.is_auto && entry.ticket_reference ? (
                   <span
                     className="flex min-w-0 flex-1 basis-48 items-center gap-1.5 text-sm"

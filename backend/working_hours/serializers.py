@@ -4,6 +4,14 @@ from django.db.models import Sum
 from rest_framework import serializers
 
 from .models import WorkLogEntry, hours_between
+from .overlaps import (
+    CONFIRM_FIELD_HELP,
+    PersonCandidate,
+    TimeRange,
+    covered_minutes_by_entry,
+    person_overlaps,
+    require_confirmation,
+)
 from .periods import local_today
 from .sync import ticket_reference
 
@@ -13,6 +21,18 @@ MAX_DAY_HOURS = Decimal(24)
 def _fmt(hours: Decimal) -> str:
     """Decimal(7.50) -> "7.5"."""
     return f"{hours.normalize():f}"
+
+
+class WorkLogEntryListSerializer(serializers.ListSerializer):
+    """
+    A list of entries, with every entry's overlap flags worked out in one pass
+    (one query for the whole list, however long), not one query per row.
+    """
+
+    def to_representation(self, data):
+        entries = list(data.all() if hasattr(data, "all") else data)
+        self.child.overlaps = covered_minutes_by_entry(entries)  # type: ignore[union-attr]
+        return [self.child.to_representation(entry) for entry in entries]  # type: ignore[union-attr]
 
 
 class WorkLogEntrySerializer(serializers.ModelSerializer):
@@ -36,6 +56,13 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     be omitted (it defaults to Non-AMS) but can't be set to AMS. An older
     hand-logged AMS entry can still be edited without resending its category.
     Reads mark auto entries (`is_auto`) and name their ticket.
+
+    Overlaps: a new entry, or an edit that moves its date or times, which
+    overlaps the owner's other entries on that date (manual or auto) is refused
+    with 409 unless `confirm_overlaps` is true (see overlaps.py). It's checked
+    last, so a request with any 400 error reports that instead. Reads flag the
+    time an entry shares with the owner's other entries (`overlap_minutes`),
+    computed live; totals still count it twice.
     """
 
     date = serializers.DateField(required=False)
@@ -46,9 +73,13 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
     is_auto = serializers.BooleanField(read_only=True)
     ticket = serializers.SerializerMethodField()
     ticket_reference = serializers.SerializerMethodField()
+    confirm_overlaps = serializers.BooleanField(write_only=True, required=False, help_text=CONFIRM_FIELD_HELP)
+    overlaps_with_other_time = serializers.SerializerMethodField()
+    overlap_minutes = serializers.SerializerMethodField()
 
     class Meta:
         model = WorkLogEntry
+        list_serializer_class = WorkLogEntryListSerializer
         fields = [
             "id",
             "user",
@@ -61,6 +92,9 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
             "is_auto",
             "ticket",
             "ticket_reference",
+            "overlaps_with_other_time",
+            "overlap_minutes",
+            "confirm_overlaps",
             "created_at",
         ]
         read_only_fields = ["id", "user", "created_at"]
@@ -90,8 +124,25 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
         """ "Ticket #… — Troubleshooting", read live from the ticket (auto entries)."""
         return ticket_reference(entry.ticket_activity) if entry.ticket_activity_id else None
 
+    # Filled by the list serializer for a whole list; a single entry loads its own.
+    overlaps: dict[int, int] | None = None
+
+    def _overlap(self, entry) -> int:
+        if self.overlaps is None or entry.pk not in self.overlaps:
+            self.overlaps = {**(self.overlaps or {}), **covered_minutes_by_entry([entry])}
+        return self.overlaps.get(entry.pk, 0)
+
+    def get_overlap_minutes(self, entry) -> int:
+        """Minutes of this entry that the owner's other entries on its date also cover (live)."""
+        return self._overlap(entry)
+
+    def get_overlaps_with_other_time(self, entry) -> bool:
+        """True when the owner logged other time overlapping this entry (it's then counted twice)."""
+        return self._overlap(entry) > 0
+
     def validate(self, attrs):
         instance = self.instance
+        confirmed = attrs.pop("confirm_overlaps", False)
 
         def final(field):
             return attrs[field] if field in attrs else getattr(instance, field)
@@ -141,4 +192,16 @@ class WorkLogEntrySerializer(serializers.ModelSerializer):
                     f"{_fmt(hours)} h would go over the 24 h a day can hold."
                 }
             )
+
+        # Overlap, last (every 400 above wins). Only new records, or an edit
+        # that moves the time: an untouched entry isn't re-checked, so an
+        # overlap confirmed earlier doesn't come back on a note edit.
+        moved = instance is None or (day, start, end) != (instance.date, instance.start_time, instance.end_time)
+        self.confirmed_overlaps = 0
+        if moved:
+            found = person_overlaps(
+                [PersonCandidate(owner, TimeRange(day, start, end))],
+                exclude_entry_ids=[instance.pk] if instance else (),
+            )
+            self.confirmed_overlaps = require_confirmation(found, confirmed)
         return attrs

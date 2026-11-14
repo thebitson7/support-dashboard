@@ -213,3 +213,114 @@ describe("initial tab (the attention alert's deep link)", () => {
     );
   });
 });
+
+describe("overlapping time (409 confirmation)", () => {
+  const OVERLAP_409 = new ApiError(
+    409,
+    "This time overlaps other work logged by the same person.",
+    {
+      data: {
+        code: "overlap_confirmation_required",
+        detail: "This time overlaps other work logged by the same person.",
+        overlaps: [
+          {
+            kind: "manual_entry",
+            person: { id: 3, name: "Alice Tan" },
+            date: "2026-09-24",
+            start: "22:00",
+            end: "23:30",
+            conflicting_start: "22:30",
+            conflicting_end: "23:00",
+            overlap_start: "22:30",
+            overlap_end: "23:00",
+            overlap_minutes: 30,
+            label: "Manual entry",
+            activity: 1,
+            conflicting_activity: null,
+            conflicting_ticket: null,
+          },
+        ],
+      },
+    },
+  );
+
+  const formEntries = (body: unknown) =>
+    [...(body as FormData).entries()].map(([k, v]) => [k, String(v)] as const);
+
+  it("asks to confirm, then resends the same payload with confirm_overlaps", async () => {
+    serve(closedTicket());
+    vi.mocked(apiPatch).mockRejectedValueOnce(OVERLAP_409).mockResolvedValueOnce(closedTicket());
+    const user = renderDialog(17);
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Overlapping time" });
+    expect(dialog).toHaveTextContent("Overlaps 30 min with Manual entry, 22:30-23:00");
+    // Not a field error: no tab is flagged for it (the modal hides the tabs
+    // from the accessibility tree, so look for the flag's text itself).
+    expect(screen.queryByText(/needs attention/)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("checkbox", { name: "I confirm this overlap is correct" }));
+    await user.click(screen.getByRole("button", { name: "Save anyway" }));
+
+    await waitFor(() => expect(apiPatch).toHaveBeenCalledTimes(2));
+    const [first, second] = vi.mocked(apiPatch).mock.calls;
+    expect(second?.[0]).toBe("/tickets/17/");
+    expect(formEntries(second?.[1])).toContainEqual(["confirm_overlaps", "true"]);
+    // Everything else is exactly what was sent the first time.
+    expect(formEntries(second?.[1]).filter(([k]) => k !== "confirm_overlaps")).toEqual(
+      formEntries(first?.[1]).filter(([k]) => k !== "confirm_overlaps"),
+    );
+  });
+
+  it("Go back and edit keeps everything entered", async () => {
+    serve(closedTicket());
+    vi.mocked(apiPatch).mockRejectedValueOnce(OVERLAP_409);
+    const user = renderDialog(17);
+    const number = await screen.findByLabelText(/CMS Next Ticket No/);
+    await user.clear(number);
+    await user.type(number, "CMS-2002");
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    await screen.findByRole("alertdialog");
+    await user.click(screen.getByRole("button", { name: "Go back and edit" }));
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    expect(screen.getByLabelText(/CMS Next Ticket No/)).toHaveValue("CMS-2002");
+    expect(apiPatch).toHaveBeenCalledTimes(1);
+  });
+
+  it("a malformed 409 is a generic error, not a confirmation", async () => {
+    serve(closedTicket());
+    vi.mocked(apiPatch).mockRejectedValueOnce(
+      new ApiError(409, "The request couldn't be completed.", { data: { code: "other" } }),
+    );
+    const user = renderDialog(17);
+    await user.click(await screen.findByRole("button", { name: "Save changes" }));
+    expect(
+      await screen.findByText(
+        "The ticket couldn't be saved (error 409). Your entries are kept; try again.",
+      ),
+    ).toBeVisible();
+    expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument();
+  });
+
+  it("warns inline when two activities with the same resolver overlap", async () => {
+    const base = closedTicket().activities[0]!;
+    serve(
+      closedTicket({
+        activities: [
+          base,
+          { ...base, id: 92, start_at: "2026-09-24T15:00:00Z", end_at: "2026-09-24T16:00:00Z" },
+          // Same time, nobody resolving it: never compared.
+          { ...base, id: 93, resolved_by: null },
+        ],
+      }),
+    );
+    const user = renderDialog(17);
+    await user.click(await screen.findByRole("tab", { name: /Activities/ }));
+    expect(await screen.findByText("Overlaps with activity 2")).toBeVisible();
+    expect(screen.getByText("Overlaps with activity 1")).toBeVisible();
+    expect(screen.getAllByText(/^Overlaps with/)).toHaveLength(2);
+    // Advisory only: nothing flagged as an error.
+    expect(flaggedTabs().Activities).toBe(false);
+  });
+});

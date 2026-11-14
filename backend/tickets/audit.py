@@ -113,7 +113,12 @@ def _activity_phrase(signature: tuple, tzinfo) -> str:
 # --- Entries --------------------------------------------------------------------------
 
 
-def log_created(ticket: Ticket, request, activity_count: int) -> None:
+def _overlap_metadata(overlaps: int) -> dict:
+    """Saved with confirm_overlaps: its activities overlap their resolvers' other time."""
+    return {"overlap_confirmed": True, "overlap_count": overlaps} if overlaps else {}
+
+
+def log_created(ticket: Ticket, request, activity_count: int, overlaps: int = 0) -> None:
     actor = request.user
     extra = f" with {activity_count} {'activity' if activity_count == 1 else 'activities'}" if activity_count else ""
     log_action(
@@ -122,20 +127,35 @@ def log_created(ticket: Ticket, request, activity_count: int) -> None:
         target=ticket,
         target_label=ticket_label(ticket),
         description=f"{person(actor)} created ticket #{ticket.cms_next_ticket_no} for {ticket.site.name}{extra}",
-        metadata={"site": ticket.site.name, "status": ticket.status, "activities": activity_count},
+        metadata={
+            "site": ticket.site.name,
+            "status": ticket.status,
+            "activities": activity_count,
+            **_overlap_metadata(overlaps),
+        },
         request=request,
     )
 
 
 def log_updated(
-    ticket: Ticket, request, before: dict, old_activities: list[tuple] | None, new_activities: list[tuple] | None
+    ticket: Ticket,
+    request,
+    before: dict,
+    old_activities: list[tuple] | None,
+    new_activities: list[tuple] | None,
+    overlaps: int = 0,
 ) -> None:
     """
     One entry per kind of change: the status transition (closed / reopened),
     other field edits (named), then each activity genuinely added or removed.
     Activities are replaced as a set on every edit, so they're compared as a
     multiset: unchanged ones produce nothing.
+
+    A save confirmed with `overlaps` marks the field-edit entry and each
+    "activity added" entry (only new or changed activities can overlap, and
+    each of those is logged as added).
     """
+    overlap = _overlap_metadata(overlaps)
     actor = request.user
     label = ticket_label(ticket)
     number = ticket.cms_next_ticket_no
@@ -166,7 +186,7 @@ def log_updated(
             target=ticket,
             target_label=label,
             description=f"{person(actor)} updated ticket #{number}: {text.listing(names)}",
-            metadata={"fields": changed},
+            metadata={"fields": changed, **overlap},
             request=request,
         )
 
@@ -180,7 +200,7 @@ def log_updated(
                 target=ticket,
                 target_label=label,
                 description=f"{person(actor)} added {_activity_phrase(signature, tzinfo)} to ticket #{number}",
-                metadata={"activity_type": signature[0], "minutes": signature[3]},
+                metadata={"activity_type": signature[0], "minutes": signature[3], **overlap},
                 request=request,
             )
         for signature in (old - new).elements():

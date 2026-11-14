@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -31,6 +31,8 @@ function entry(overrides: Partial<WorkLogEntry> = {}): WorkLogEntry {
     is_auto: false,
     ticket: null,
     ticket_reference: null,
+    overlaps_with_other_time: false,
+    overlap_minutes: 0,
     created_at: "2026-09-23T14:00:00Z",
     ...overrides,
   };
@@ -209,5 +211,65 @@ describe("LogHoursDialog saving", () => {
       "Couldn't reach the server. Your entries are kept; try again.",
     );
     expect(onOpenChange).not.toHaveBeenCalled();
+  });
+});
+
+describe("LogHoursDialog overlapping time (409 confirmation)", () => {
+  const overlap409 = () =>
+    new ApiError(409, "This time overlaps other work logged by the same person.", {
+      data: {
+        code: "overlap_confirmation_required",
+        detail: "This time overlaps other work logged by the same person.",
+        overlaps: [
+          {
+            kind: "manual_entry",
+            person: { id: 3, name: "Alice Tan" },
+            date: "2026-09-23",
+            start: "09:00",
+            end: "10:30",
+            conflicting_start: "10:00",
+            conflicting_end: "11:00",
+            overlap_start: "10:00",
+            overlap_end: "10:30",
+            overlap_minutes: 30,
+            label: "Manual entry (Standup)",
+            activity: null,
+            conflicting_activity: null,
+            conflicting_ticket: null,
+          },
+        ],
+      },
+    });
+
+  it("confirms, then resends the same values with confirm_overlaps", async () => {
+    vi.mocked(apiPatch).mockRejectedValueOnce(overlap409()).mockResolvedValueOnce(entry());
+    const { user, onSaved } = setup({ entry: entry({ note: "Report" }) });
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+
+    const dialog = await screen.findByRole("alertdialog", { name: "Overlapping time" });
+    expect(dialog).toHaveTextContent("Overlaps 30 min with Manual entry (Standup), 10:00-10:30");
+    expect(onSaved).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("checkbox", { name: "I confirm this overlap is correct" }));
+    await user.click(screen.getByRole("button", { name: "Save anyway" }));
+    await waitFor(() => expect(onSaved).toHaveBeenCalledTimes(1));
+    const sent = { date: "2026-09-23", start_time: "09:00", end_time: "10:30", note: "Report" };
+    expect(vi.mocked(apiPatch).mock.calls[0]?.[1]).toEqual(sent);
+    expect(vi.mocked(apiPatch).mock.calls[1]?.[1]).toEqual({ ...sent, confirm_overlaps: true });
+  });
+
+  it("going back keeps the date, times and note typed", async () => {
+    const { user, onOpenChange } = setup({ entry: entry({ note: "" }) });
+    const note = screen.getByLabelText(/Note/);
+    await user.type(note, "Vendor call");
+    vi.mocked(apiPatch).mockRejectedValueOnce(overlap409());
+    await user.click(screen.getByRole("button", { name: "Save changes" }));
+    await screen.findByRole("alertdialog");
+    await user.keyboard("{Escape}");
+    await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+    // Escape went to the confirmation only: the form is still open, as typed.
+    expect(onOpenChange).not.toHaveBeenCalledWith(false);
+    expect(screen.getByLabelText(/Note/)).toHaveValue("Vendor call");
+    expect(document.activeElement?.id).toBe("nt-start_time");
   });
 });

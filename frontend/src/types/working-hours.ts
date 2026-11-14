@@ -48,6 +48,14 @@ export type WorkLogEntry = {
   /** Auto entries: the ticket's id and "Ticket #… — Troubleshooting". */
   ticket: number | null;
   ticket_reference: string | null;
+  /**
+   * The owner logged other time overlapping this entry (saved after an
+   * explicit confirmation): computed live by the server. Totals still count
+   * the overlapping minutes twice.
+   */
+  overlaps_with_other_time: boolean;
+  /** How many of this entry's minutes other entries that day also cover. */
+  overlap_minutes: number;
   created_at: string;
 };
 

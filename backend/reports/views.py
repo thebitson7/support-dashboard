@@ -5,6 +5,7 @@ this app writes.
 """
 
 from datetime import date, timedelta
+from itertools import groupby
 
 from django.db.models import Q
 from drf_spectacular.types import OpenApiTypes
@@ -22,6 +23,7 @@ from core.exports import csv_response, text_cell
 from core.params import positive_id, query_day
 from working_hours.models import WorkLogEntry
 from working_hours.openapi import MemberActivity, TeamActivity
+from working_hours.overlaps import covered_minutes, entry_range
 from working_hours.periods import local_today
 from working_hours.serializers import WorkLogEntrySerializer
 from working_hours.sync import ticket_reference
@@ -166,11 +168,28 @@ class TeamActivityExportView(APIView):
     Minutes is each entry's exact length and adds up to the report's totals.
     Hours is the same length to 2 decimal places, for reading; a column of
     rounded hours can be a minute or two off when summed.
+
+    Overlap Minutes (the last column, so readers by position are unaffected):
+    how much of the entry the same person's other entries that day also cover
+    (working_hours.overlaps). Such time is still counted twice in Minutes and
+    the totals; 0 = no overlap. Computed per person-day while streaming, from
+    the rows already being read (no extra queries).
     """
 
     permission_classes = [IsAuthenticated, IsAdminRole]
     throttle_classes = [ExportRateThrottle]
-    HEADER = ["User", "Date", "Start Time", "End Time", "Category", "Hours", "Minutes", "Source", "Note"]
+    HEADER = [
+        "User",
+        "Date",
+        "Start Time",
+        "End Time",
+        "Category",
+        "Hours",
+        "Minutes",
+        "Source",
+        "Note",
+        "Overlap Minutes",
+    ]
 
     def get(self, request):
         start, end = report_range(request)
@@ -186,8 +205,17 @@ class TeamActivityExportView(APIView):
             .select_related("user", "ticket_activity__ticket")
             .order_by("user__first_name", "user__last_name", "user__username", "date", "start_time", "id")
         )
-        rows = (self._row(e) for e in entries.iterator(chunk_size=500))
-        return csv_response(name, self.HEADER, rows)
+        return csv_response(name, self.HEADER, self._rows(entries.iterator(chunk_size=500)))
+
+    @classmethod
+    def _rows(cls, entries):
+        # Ordered by person then date, so each person-day arrives together.
+        for _, day in groupby(entries, key=lambda e: (e.user_id, e.date)):
+            group = list(day)
+            ranges = [(i, r) for i, e in enumerate(group) if (r := entry_range(e)) is not None]
+            covered = dict(zip((i for i, _ in ranges), covered_minutes([r for _, r in ranges]), strict=True))
+            for i, entry in enumerate(group):
+                yield [*cls._row(entry), str(covered.get(i, 0))]
 
     @staticmethod
     def _row(entry) -> list:

@@ -161,7 +161,7 @@ DATABASE_URL=postgres://support_dashboard:change-me@localhost:5432/support_dashb
 # add ?sslmode=require for a managed database that expects TLS
 ```
 
-Everything else works the same way against it: `python manage.py migrate`, the seed commands, `sync_ticket_work_logs`, and `python manage.py test` (Django creates and drops a separate `test_…` database, so the user needs `CREATEDB`). Connections are reused for 60 s and health-checked before reuse. The full migration history and test suite are verified against PostgreSQL 16.
+Everything else works the same way against it: `python manage.py migrate`, the seed commands, `sync_ticket_work_logs`, and `python manage.py test` (Django creates and drops a separate `test_…` database, so the user needs `CREATEDB`). Connections are reused for 60 s and health-checked before reuse. The full migration history and test suite were last verified against PostgreSQL 16 in the 2026-09-27 pre-deployment review; re-run them there before going live.
 
 ## Production checklist
 

@@ -6,6 +6,7 @@ import { toast } from "sonner";
 
 import type { WorkLogEntry } from "@/types/working-hours";
 import { ApiError, apiPatch, apiPost } from "@/lib/api";
+import { overlapsFromError, type Overlap } from "@/lib/overlaps";
 import { formatDateDisplay } from "@/lib/local-datetime";
 import { formatTimeRange, spanMinutes, userQuery, WORK_CATEGORIES } from "@/lib/working-hours";
 import { DateTimePicker } from "@/components/common/date-time-picker";
@@ -14,6 +15,7 @@ import { formatDuration } from "@/lib/format";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Input } from "@/components/ui/input";
+import { OverlapConfirmDialog } from "@/components/common/overlap-confirm-dialog";
 
 type Values = {
   date: string;
@@ -94,6 +96,10 @@ export function LogHoursDialog({
   const [general, setGeneral] = useState<string | null>(null);
   const [submitting, setSubmitting] = useState(false);
   const inFlight = useRef(false);
+  // A save refused for overlapping time: what to confirm (`round` remounts
+  // the confirmation per answer) and the exact body to resend.
+  const [overlaps, setOverlaps] = useState<{ round: number; items: Overlap[] } | null>(null);
+  const overlapRequest = useRef<Record<string, string> | null>(null);
 
   const clientErrors = useMemo(() => validate(values, today), [values, today]);
   // Live, like the duration preview: once both times are picked, an
@@ -130,22 +136,26 @@ export function LogHoursDialog({
       return;
     }
 
-    inFlight.current = true;
-    setSubmitting(true);
-    setGeneral(null);
     // No `hours`: the server computes it from the times.
-    const body = {
+    await send({
       date: values.date,
       ...(entry ? {} : { category: "non_ams" }),
       start_time: values.start_time,
       end_time: values.end_time,
       note: values.note.trim(),
-    };
+    });
+  }
+
+  async function send(body: Record<string, string>, confirm = false) {
+    inFlight.current = true;
+    setSubmitting(true);
+    setGeneral(null);
+    const payload = confirm ? { ...body, confirm_overlaps: true } : body;
     try {
       if (entry) {
-        await apiPatch<WorkLogEntry>(`/working-hours/entries/${entry.id}/`, body);
+        await apiPatch<WorkLogEntry>(`/working-hours/entries/${entry.id}/`, payload);
       } else {
-        await apiPost<WorkLogEntry>(`/working-hours/entries/${userQuery(userId)}`, body);
+        await apiPost<WorkLogEntry>(`/working-hours/entries/${userQuery(userId)}`, payload);
       }
       const category = WORK_CATEGORIES.find(
         (c) => c.value === (entry?.category ?? "non_ams"),
@@ -158,6 +168,14 @@ export function LogHoursDialog({
       onSaved();
       onOpenChange(false);
     } catch (err) {
+      // Overlapping time: confirm it (the form keeps everything typed).
+      const found = overlapsFromError(err);
+      if (found) {
+        overlapRequest.current = body;
+        setOverlaps({ round: (overlaps?.round ?? 0) + 1, items: found });
+        return;
+      }
+      setOverlaps(null);
       if (err instanceof ApiError && err.status === 400 && isRecord(err.data)) {
         const fields: Partial<Record<FieldName, string>> = {};
         const other: string[] = [];
@@ -196,7 +214,8 @@ export function LogHoursDialog({
     <Dialog
       open={open}
       onOpenChange={(next) => {
-        if (!submitting) onOpenChange(next);
+        // While the overlap confirmation is up, Escape belongs to it.
+        if (!submitting && !overlaps) onOpenChange(next);
       }}
     >
       <DialogContent
@@ -338,6 +357,23 @@ export function LogHoursDialog({
             </div>
           </footer>
         </form>
+        {overlaps && (
+          <OverlapConfirmDialog
+            key={overlaps.round}
+            open
+            overlaps={overlaps.items}
+            submitting={submitting}
+            onConfirm={() => {
+              if (overlapRequest.current && !inFlight.current) {
+                void send(overlapRequest.current, true);
+              }
+            }}
+            onBack={() => {
+              setOverlaps(null);
+              document.getElementById(fieldId("start_time"))?.focus();
+            }}
+          />
+        )}
       </DialogContent>
     </Dialog>
   );

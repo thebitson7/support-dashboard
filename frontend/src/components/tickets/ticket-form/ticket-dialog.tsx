@@ -9,6 +9,7 @@ import { cn } from "cn";
 
 import type { TicketStatus } from "@/types/tickets";
 import { ApiError, apiPatch, apiPost } from "@/lib/api";
+import { overlapsFromError, type Overlap } from "@/lib/overlaps";
 import { EASE } from "@/lib/motion";
 import type { ApiTicketDetail, ApiTicketRow, ApiWorkDoneCode } from "@/lib/tickets-api";
 import { useApiGet } from "@/hooks/use-api";
@@ -25,6 +26,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
+import { OverlapConfirmDialog } from "@/components/common/overlap-confirm-dialog";
 import { StatusCell } from "@/components/tickets/cells";
 import {
   ActivitiesTab,
@@ -102,6 +104,10 @@ function TicketForm({
   const [direction, setDirection] = useState(1);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const inFlight = useRef(false);
+  // A save refused for overlapping time: what to confirm, and the exact
+  // request to resend. `round` remounts the confirmation for each new answer.
+  const [overlaps, setOverlaps] = useState<{ round: number; items: Overlap[] } | null>(null);
+  const overlapRequest = useRef<FormData | null>(null);
 
   // Keep the shell's close guard in sync.
   useEffect(() => {
@@ -182,24 +188,42 @@ function TicketForm({
       return;
     }
 
+    await send(
+      buildTicketFormData(values, activities, {
+        removeExistingPdf: Boolean(editing?.pdf_attachment_name) && existingPdf === null,
+      }),
+    );
+  }
+
+  /** "Save anyway": the very payload the server refused, now confirming the overlaps. */
+  async function confirmOverlaps() {
+    const body = overlapRequest.current;
+    if (!body || inFlight.current) return;
+    body.set("confirm_overlaps", "true");
+    await send(body);
+  }
+
+  async function send(body: FormData) {
     inFlight.current = true;
     setSubmitting(true);
     setServerErrors(NO_SERVER_ERRORS);
     try {
       if (editing) {
-        const body = buildTicketFormData(values, activities, {
-          removeExistingPdf: Boolean(editing.pdf_attachment_name) && existingPdf === null,
-        });
         const saved = await apiPatch<ApiTicketDetail>(`/tickets/${editing.id}/`, body);
         onSaved("Ticket updated", `${saved.cms_next_ticket_no} · now ${statusLabel(saved.status)}`);
       } else {
-        const created = await apiPost<ApiTicketRow>(
-          "/tickets/",
-          buildTicketFormData(values, activities),
-        );
+        const created = await apiPost<ApiTicketRow>("/tickets/", body);
         onSaved("Ticket created", `${created.cms_next_ticket_no} · ${created.site_name}`);
       }
     } catch (err) {
+      // Overlapping time isn't a field error: ask to confirm, keeping every entry.
+      const found = overlapsFromError(err);
+      if (found) {
+        overlapRequest.current = body;
+        setOverlaps({ round: (overlaps?.round ?? 0) + 1, items: found });
+        return;
+      }
+      setOverlaps(null);
       if (err instanceof ApiError && err.status === 400) {
         const mapped = mapServerErrors(err.data, activities);
         setServerErrors(mapped);
@@ -372,6 +396,17 @@ function TicketForm({
           </Button>
         </div>
       </footer>
+
+      {overlaps && (
+        <OverlapConfirmDialog
+          key={overlaps.round}
+          open
+          overlaps={overlaps.items}
+          submitting={submitting}
+          onConfirm={() => void confirmOverlaps()}
+          onBack={() => setOverlaps(null)}
+        />
+      )}
     </form>
   );
 }

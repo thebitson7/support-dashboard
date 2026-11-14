@@ -1,10 +1,11 @@
 "use client";
 
-import { Check } from "lucide-react";
+import { Check, Layers } from "lucide-react";
 
 import type { WorkLogEntry } from "@/types/working-hours";
 import { formatDuration } from "@/lib/format";
 import { CATEGORY_COLOR, entryMinutes } from "@/lib/working-hours";
+import { doubleCountedMinutes, formatOverlapDuration } from "@/lib/overlaps";
 import { deepen, readable } from "@/components/dashboard/accent";
 import { Card } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -46,6 +47,9 @@ export function DaySummary({ entries }: { entries: WorkLogEntry[] | undefined })
   const total = ams + nonAms;
   const percent = Math.round((total / DAY_GOAL_MINUTES) * 100);
   const goalMet = percent >= 100;
+  // Time counted twice because entries overlap (confirmed when saved); the
+  // total above includes it, as every total does.
+  const overlapping = doubleCountedMinutes(entries);
 
   return (
     <Card className="gap-4 px-5 shadow-elev-1">
@@ -100,6 +104,13 @@ export function DaySummary({ entries }: { entries: WorkLogEntry[] | undefined })
           {percent}%
         </span>
       </div>
+
+      {overlapping > 0 && (
+        <p className="text-label -mt-1 flex items-center gap-1.5">
+          <Layers className="size-3.5 shrink-0" aria-hidden />
+          Includes {formatOverlapDuration(overlapping)} of overlapping time
+        </p>
+      )}
     </Card>
   );
 }

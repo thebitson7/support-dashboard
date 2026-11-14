@@ -7,6 +7,7 @@ OpenAPI schema describes them. Nothing uses them at runtime, so keep them in
 step with those dicts when either changes.
 """
 
+from drf_spectacular.utils import OpenApiResponse
 from rest_framework import serializers
 
 from accounts.serializers import UserSummarySerializer
@@ -78,3 +79,56 @@ class MemberActivity(_ReportRange):
 
     member = TeamMember()
     entries = WorkLogEntrySerializer(many=True)
+
+
+# --- 409: overlapping time needs confirmation (working_hours/overlaps.py) ------------
+
+
+class OverlapPerson(serializers.Serializer):
+    id = serializers.IntegerField()
+    name = serializers.CharField()
+
+
+class OverlapItem(serializers.Serializer):
+    kind = serializers.ChoiceField(
+        choices=["manual_entry", "ticket_activity", "same_request"],
+        help_text="What the conflicting time is: a manual entry, another ticket's activity, "
+        "or another activity in this same request.",
+    )
+    person = OverlapPerson(help_text="Whose time overlaps (always one person's own time).")
+    date = serializers.DateField(help_text="In that person's own time zone.")
+    start = serializers.CharField(help_text="HH:MM: the time being saved.")
+    end = serializers.CharField(help_text="HH:MM.")
+    conflicting_start = serializers.CharField(help_text="HH:MM: the time it overlaps.")
+    conflicting_end = serializers.CharField(help_text="HH:MM.")
+    overlap_start = serializers.CharField(help_text="HH:MM: where the two meet.")
+    overlap_end = serializers.CharField(help_text="HH:MM.")
+    overlap_minutes = serializers.IntegerField()
+    # Shadows Field.label in the stubs only (see Period above).
+    label = serializers.CharField(  # type: ignore[assignment]
+        help_text="'Ticket #<CMS no.> (<activity type>)', 'Manual entry' (with its note), or 'Activity <n>'."
+    )
+    activity = serializers.IntegerField(
+        allow_null=True, help_text="Ticket saves: the 1-based position of the activity being saved."
+    )
+    conflicting_activity = serializers.IntegerField(
+        allow_null=True, help_text="same_request: the 1-based position of the other activity."
+    )
+    conflicting_ticket = serializers.IntegerField(allow_null=True, help_text="ticket_activity: that ticket's id.")
+
+
+class OverlapConflict(serializers.Serializer):
+    code = serializers.ChoiceField(choices=["overlap_confirmation_required"])
+    detail = serializers.CharField()
+    overlaps = OverlapItem(many=True)
+
+
+OVERLAP_CONFLICT = OpenApiResponse(
+    response=OverlapConflict,
+    description=(
+        "The time overlaps other work the same person logged (touching end to start is not an "
+        "overlap). Nothing was saved. Resend the same request with `confirm_overlaps: true` to "
+        "save anyway; the overlapping time is then counted twice. Validation errors (400) are "
+        "always reported first."
+    ),
+)

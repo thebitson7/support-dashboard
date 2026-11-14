@@ -1,4 +1,6 @@
+from collections import Counter
 from decimal import ROUND_HALF_UP, Decimal
+from types import SimpleNamespace
 
 from django.db import transaction
 from django.db.models import Sum
@@ -8,7 +10,14 @@ from rest_framework import serializers
 
 from accounts.models import User
 from accounts.serializers import UserRefSerializer
-from working_hours.sync import sync_ticket
+from working_hours.overlaps import (
+    CONFIRM_FIELD_HELP,
+    PersonCandidate,
+    TimeRange,
+    person_overlaps,
+    require_confirmation,
+)
+from working_hours.sync import local_span, sync_ticket
 
 from . import audit
 from .attention import ROLE_ORDER, Level, closure_lag_minutes
@@ -140,6 +149,12 @@ class TicketWriteSerializer(serializers.ModelSerializer):
 
     Activities are replaced as a set: the list sent becomes the ticket's
     activities (on PATCH, omit the key to leave them untouched).
+
+    Overlapping time: an activity with a resolver is that person's time (its
+    auto work-log entry). When a new or changed activity would overlap the
+    resolver's other logged time, or another activity in the same request for
+    the same resolver, the save is refused with 409 unless `confirm_overlaps`
+    is true. See _check_overlaps for exactly which activities are checked.
     """
 
     assigned_to = active_user_field()
@@ -148,6 +163,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
     resolution_verified_by = active_user_field(required=False, allow_null=True)
     cms_closed_by = active_user_field(required=False, allow_null=True)
     activities = TicketActivityWriteSerializer(many=True, required=False)
+    confirm_overlaps = serializers.BooleanField(write_only=True, required=False, help_text=CONFIRM_FIELD_HELP)
 
     class Meta:
         model = Ticket
@@ -171,6 +187,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
             "is_pre",
             *VERIFICATION_FIELDS,
             "activities",
+            "confirm_overlaps",
         ]
         extra_kwargs = {
             # null = "remove the current attachment" (on update).
@@ -200,6 +217,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
             return getattr(self.instance, field, None) if self.instance else None
 
         errors = {}
+        confirmed = attrs.pop("confirm_overlaps", False)
 
         if final("is_forwarded"):
             if not final("forwarded_to"):
@@ -222,7 +240,55 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         # The column can't hold NULL; an empty name is how "no file" is stored.
         if "pdf_attachment" in attrs and attrs["pdf_attachment"] is None:
             attrs["pdf_attachment"] = ""
+
+        # Last, so any 400 above wins; and before anything is written, so a
+        # 409 leaves the database (work logs and audit log included) untouched.
+        self.confirmed_overlaps = 0
+        if attrs.get("activities") is not None:
+            self.confirmed_overlaps = self._check_overlaps(attrs["activities"], confirmed)
         return attrs
+
+    def _check_overlaps(self, activities: list[dict], confirmed: bool) -> int:
+        """
+        Which activities are checked: only new or changed ones. An activity
+        counts as unchanged when the stored set has one with the same start,
+        end and resolver (matched one for one, like the audit's multiset
+        diff); a change to its type, code or flags doesn't make it changed.
+        Unchanged activities aren't checked against anything, so overlaps
+        confirmed earlier don't come back on every later edit, but checked
+        ones are still compared with them (same request, same resolver).
+        The ticket's stored activities and their auto entries are being
+        replaced, so they're never "other" time.
+
+        Each activity is compared as its would-be auto entry, exactly as
+        working_hours.sync cuts it: in the resolver's zone, clipped at 23:59,
+        none under a minute, none without a resolver.
+        """
+        stored: Counter = Counter()
+        if self.instance is not None:
+            stored = Counter(self.instance.activities.values_list("start_at", "end_at", "resolved_by_id"))
+        candidates, peers = [], []
+        for position, activity in enumerate(activities, start=1):
+            user = activity.get("resolved_by")
+            if user is None:
+                continue
+            span = SimpleNamespace(start_at=activity["start_at"], end_at=activity["end_at"])
+            day, start, end = local_span(span, user.tzinfo)
+            if end <= start:
+                continue
+            item = PersonCandidate(user, TimeRange(day, start, end, ref=position))
+            signature = (activity["start_at"], activity["end_at"], user.pk)
+            if stored[signature] > 0:
+                stored[signature] -= 1
+                peers.append(item)
+            else:
+                candidates.append(item)
+        found = person_overlaps(
+            candidates,
+            peers=peers,
+            exclude_activity_ids=self.instance.activities.values("pk") if self.instance is not None else None,
+        )
+        return require_confirmation(found, confirmed)
 
     @transaction.atomic
     def create(self, validated_data):
@@ -237,7 +303,7 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         # Mirror resolved activities into their resolvers' work logs.
         sync_ticket(ticket)
         if request := self.context.get("request"):
-            audit.log_created(ticket, request, len(activities))
+            audit.log_created(ticket, request, len(activities), overlaps=self.confirmed_overlaps)
         return ticket
 
     @transaction.atomic
@@ -267,7 +333,9 @@ class TicketWriteSerializer(serializers.ModelSerializer):
         self._record_closure(instance, was=before["status"])
         if request := self.context.get("request"):
             new_activities = audit.sent_activities(activities) if activities is not None else None
-            audit.log_updated(instance, request, before, old_activities, new_activities)
+            audit.log_updated(
+                instance, request, before, old_activities, new_activities, overlaps=self.confirmed_overlaps
+            )
 
         if old_pdf and instance.pdf_attachment.name != old_pdf:
             # Replaced or removed: delete the old file once the update commits.
@@ -337,7 +405,9 @@ class TicketActivityReadSerializer(serializers.ModelSerializer):
 
 
 # Every writable field except the two represented differently on read.
-_DETAIL_WRITE_FIELDS = [f for f in TicketWriteSerializer.Meta.fields if f not in ("pdf_attachment", "activities")]
+_DETAIL_WRITE_FIELDS = [
+    f for f in TicketWriteSerializer.Meta.fields if f not in ("pdf_attachment", "activities", "confirm_overlaps")
+]
 
 
 class TicketDetailSerializer(serializers.ModelSerializer):

@@ -27,7 +27,7 @@ The Support Dashboard is an internal tool for a support team. It covers:
 - **Administration:** admin-only user management.
 - **Audit Log:** admin-only record of sign-ins, ticket, hours, lookup and account changes, with CSV export.
 
-Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 292 tests, all passing on SQLite **and** PostgreSQL 16.2. Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
+Only the **Home dashboard** still runs on mock data; no placeholders are left. The backend suite has 390 tests and the frontend 305, all passing (backend on SQLite; it last ran on PostgreSQL 16.2 at 292 tests, in the pre-deployment review, so re-run it there before go-live). Typecheck, lint and formatting are clean, the production build succeeds, and `check --deploy` is clean apart from the deliberately opt-in HSTS. It's ready for the data wipe and deploy; §4.2 lists what's left.
 
 ---
 
@@ -156,11 +156,12 @@ Only the **Home dashboard** still runs on mock data; no placeholders are left. T
   - An auto entry sits on the activity's start date in the **resolver's** own zone.
   - Past midnight it is clipped to 11:59 PM (gap #14); under a minute, it gets no entry.
   - Manual entries need an end time after the start time, can't be on a future date, and a day can't exceed 24 h across all entries.
+- **Overlapping time needs confirmation** (`working_hours/overlaps.py`). Two ranges of the same person overlap when they share a minute on the same date (touching at an end point doesn't count; two people at the same time never do). A new manual entry, an edit that moves one, or a ticket save with a new or changed activity (its start, end or resolver differs from every stored one) that overlaps the person's other entries, manual or auto, or another activity for the same resolver in the same request, is refused with **409** `overlap_confirmation_required` and a list of the overlaps. Resending with `confirm_overlaps: true` saves it; the audit entry then records `overlap_confirmed` and `overlap_count`. Validation errors (400) always come first, and a refused ticket save writes nothing. The ticket form also warns inline when two of its rows with the same resolver overlap. Afterwards, entries carry `overlaps_with_other_time` / `overlap_minutes` (computed live, one query per list); the Job Sheet flags them and its summary says how much overlapping time the day includes; the Team Activity CSV has an `Overlap Minutes` column (last). Totals are unchanged: overlapping time counts twice.
 - **`seed_work_logs` now generates Non-AMS manual entries only** (fixed in this audit). It never touches auto entries.
 
 **Files:**
-- Backend: `working_hours/` (`sync.py`, `serializers.py`, `views.py`, `totals.py`).
-- Frontend: `app/job-sheets/page.tsx`, `components/job-sheets/` (`day-summary`, `day-entries`), `components/working-hours/log-hours-dialog.tsx`.
+- Backend: `working_hours/` (`sync.py`, `serializers.py`, `views.py`, `totals.py`, `overlaps.py`).
+- Frontend: `app/job-sheets/page.tsx`, `components/job-sheets/` (`day-summary`, `day-entries`), `components/working-hours/log-hours-dialog.tsx`, `components/common/overlap-confirm-dialog.tsx`, `lib/overlaps.ts`.
 
 ### 2.9 Reports (`/reports`)
 
@@ -339,6 +340,7 @@ A whole-project polish and hardening pass (no features, schema or API-contract c
 - **Backend:** query-parameter parsing shared in `core/params.py` (ids, dates, instants, time zones; 11 tests), `VERIFICATION_FIELDS` and `ticket_label` defined once in `tickets/models.py`; every one of the 60 API operations now has an OpenAPI summary (41 had none; a test keeps it that way); mypy targets the 3.14 runtime; **ruff** (lint + format, conservative rules) added to `requirements-dev.txt` and CI, and the code formatted once with it; CI also checks the OpenAPI schema.
 - **Frontend:** one `PageHeader` / `PrimaryAction` for every page header; one `ToneBadge` for every status pill (ticket status, active/inactive, AMS/Non-AMS, audit actions: the audit badges were below AA contrast in dark mode); one duration format (`formatDuration`) and one date-time format everywhere; read-only yes/no cells are a check mark or dash, not a checkbox; the Open-row tint on the tickets table is light; one toast area for the whole app; labels follow one rule (Title Case for names of places: nav, page titles, breadcrumbs, tabs; sentence case for everything else); the sidebar and sign-in alert are lazy-loaded (−52 KB gzipped first-load JS on /login, smaller on every page); a 34-test suite covers the server-side gateway (`src/lib/server/gateway.test.ts`).
 - **Counts:** backend 346 tests, frontend 268, all passing.
+- **After the overlap-confirmation work (verified 2026-11-14):** backend **390** (`working_hours` 121 incl. `test_overlaps.py` 44; `tickets` 96 incl. `test_attention.py` 38; `accounts` 45; `core` 38; `audit` 36; `lookups` 30; `reports` 24), frontend **305** in 16 files; every CI step passes locally; 44 migrations apply to an empty SQLite database. PostgreSQL was not re-verified in this pass.
 
 ### 4.1 Tests and checks (run 2026-09-27, final pre-deployment review)
 
@@ -416,7 +418,7 @@ Reconciled with the upgrade pass:
 | 10 | **Holidays aren't used by anything:** goals ignore holidays and weekends. | M | M |
 | 11 | **Email is unconfigured;** no features send mail. | L | S |
 | 12 | **Hardcoded choice lists** (ticket type, channel, activity type) are duplicated between Django and the frontend. | L | S–M |
-| 13 | **Overlapping entries are accepted and counted twice** (auto + manual covering the same minutes). Only the 24 h daily cap applies. | M | M |
+| 13 | **Overlapping time is counted twice, by agreement.** Since 2026-11-13 a new or moved entry or activity that overlaps the same person's other time needs an explicit confirmation (409 until `confirm_overlaps`), and confirmed overlaps are flagged on the Job Sheet and in the Team Activity CSV. Totals still add them twice; overlaps that existed before then aren't flagged at save time (they show in the read-time flags). | L | M |
 | 14 | **Auto entries are clipped at 11:59 PM** in the resolver's zone, and a 1-minute activity at 11:59 PM gets no entry. | L | M |
 | 15 | **Auto-entry dates are fixed at sync time:** a time-zone change moves existing ones only after `sync_ticket_work_logs`. | L | S |
 | 16 | **Auto-entry hours come from the activity's times, not an explicit `duration_minutes` override** (API-only). | L | S |
@@ -504,6 +506,6 @@ All passwords are `password123`.
 
 ### Running the checks
 ```bash
-cd backend && python manage.py check && ruff check . && ruff format --check . && mypy . && python manage.py test   # 346 tests (add DATABASE_URL=… to run them on PostgreSQL)
+cd backend && python manage.py check && ruff check . && ruff format --check . && mypy . && python manage.py test   # 390 tests (add DATABASE_URL=… to run them on PostgreSQL)
 cd frontend && npm run typecheck && npm run lint && npm run format:check
 ```
